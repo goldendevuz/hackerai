@@ -173,13 +173,92 @@ export async function renderFindingPdf(
     proseRun(label[2], x, leadWidth);
   };
 
+  // Matches a markdown table row "| a | b |" (leading/trailing pipe optional)
+  // and its separator "| --- | --- |". Cells are split on unescaped "|".
+  const TABLE_ROW = /^\s*\|?(.+)\|?\s*$/;
+  const TABLE_SEPARATOR = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+  const splitTableCells = (row: string): string[] =>
+    row
+      .trim()
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((cell) => cell.trim());
+
+  // Renders a markdown table as a bordered grid: equal-width columns, each
+  // cell's text wrapped independently, header row bold on a tinted band.
+  const table = (headerRow: string[], bodyRows: string[][]) => {
+    const colCount = headerRow.length;
+    const colWidth = CONTENT_WIDTH / colCount;
+    const cellPad = 2;
+    doc.setFontSize(9);
+    const rowHeight = (cells: string[], bold: boolean) => {
+      doc.setFont(fonts.sans, bold ? "bold" : "normal");
+      let maxLines = 1;
+      for (const cell of cells) {
+        const lines = doc.splitTextToSize(
+          stripMarkdown(cell),
+          colWidth - cellPad * 2,
+        ) as string[];
+        maxLines = Math.max(maxLines, lines.length);
+      }
+      return maxLines * 4.2 + cellPad * 2;
+    };
+    const drawRow = (cells: string[], bold: boolean) => {
+      const h = rowHeight(cells, bold);
+      ensureSpace(h);
+      if (bold) {
+        doc.setFillColor(...LIGHT_GRAY);
+        doc.rect(MARGIN, y, CONTENT_WIDTH, h, "F");
+      }
+      doc.setDrawColor(...RULE);
+      doc.setLineWidth(0.2);
+      doc.setFont(fonts.sans, bold ? "bold" : "normal");
+      doc.setTextColor(...DARK_TEXT);
+      for (let c = 0; c < colCount; c++) {
+        const cx = MARGIN + c * colWidth;
+        doc.rect(cx, y, colWidth, h, "S");
+        const lines = doc.splitTextToSize(
+          stripMarkdown(cells[c] ?? ""),
+          colWidth - cellPad * 2,
+        ) as string[];
+        doc.text(lines, cx + cellPad, y + cellPad + 3);
+      }
+      y += h;
+    };
+    drawRow(headerRow, true);
+    for (const row of bodyRows) drawRow(row, false);
+    y += 3;
+  };
+
   const prose = (text: string) => {
     doc.setFontSize(10.5);
     doc.setTextColor(...DARK_TEXT);
-    for (const raw of stripMarkdown(text).split("\n")) {
-      const line = raw.trimEnd();
+    const lines = stripMarkdown(text).split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trimEnd();
       if (!line.trim()) {
         y += 2;
+        continue;
+      }
+      // A table is a "| ... |" row immediately followed by a "| --- |" rule.
+      if (
+        line.includes("|") &&
+        TABLE_ROW.test(line) &&
+        lines[i + 1] &&
+        TABLE_SEPARATOR.test(lines[i + 1])
+      ) {
+        const headerRow = splitTableCells(line);
+        let j = i + 2;
+        const bodyRows: string[][] = [];
+        while (j < lines.length && lines[j].trimEnd().includes("|")) {
+          bodyRows.push(splitTableCells(lines[j]));
+          j++;
+        }
+        table(headerRow, bodyRows);
+        doc.setFontSize(10.5);
+        doc.setTextColor(...DARK_TEXT);
+        i = j - 1;
         continue;
       }
       doc.setFont(fonts.sans, "normal");

@@ -160,4 +160,29 @@ describe("renderFindingPdf", () => {
       }),
     ).resolves.toBeInstanceOf(Blob);
   });
+
+  it("renders a markdown table as a grid instead of leaving literal pipe characters", async () => {
+    // Regression: before table support, a field like the agent's endpoint
+    // comparison table rendered as raw "| cell | cell |" prose lines instead
+    // of an actual grid, unlike the finding page's markdown-rendered view.
+    const withTable: FindingDetailRecord = {
+      ...baseFinding,
+      technical_analysis:
+        "Comparing the two endpoints:\n\n| Request | Result |\n| --- | --- |\n| GET /api/draft/ (no credentials) | 401 |\n| POST /api/shares/ (no credentials) | 201 Created |\n\nThe second row proves the gap.",
+    };
+    const blob = await renderFindingPdf(withTable);
+    expect(blob.type).toBe("application/pdf");
+    expect(blob.size).toBeGreaterThan(1000);
+  });
+
+  it("does not throw on a malformed table row with a mismatched cell count", async () => {
+    const withRaggedTable: FindingDetailRecord = {
+      ...baseFinding,
+      technical_analysis:
+        "| A | B | C |\n| --- | --- | --- |\n| only-one-cell |\n| x | y | z |",
+    };
+    await expect(renderFindingPdf(withRaggedTable)).resolves.toBeInstanceOf(
+      Blob,
+    );
+  });
 });
