@@ -30,7 +30,7 @@ export interface FindingEvent {
   duration_ms?: number;
   evidence_warning?: boolean;
   surface?: "computer_sidebar" | "findings_page" | "detail";
-  format?: "markdown" | "csv";
+  format?: "markdown" | "csv" | "pdf";
   answer?: "useful" | "needs_correction" | "not_checked";
   closure_reason?: "already_fixed" | "wont_fix" | "false_positive";
   result_count?: number;

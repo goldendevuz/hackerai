@@ -122,6 +122,7 @@ import { useChatPerformance } from "@/app/hooks/useChatPerformance";
 import { useBrowserResponsiveness } from "@/app/hooks/useBrowserResponsiveness";
 
 import { HackingSuggestions } from "./HackingSuggestions";
+import { isCloudAgentUnlockedForFree } from "@/lib/experiments/solider-cloud-agent";
 
 const AGENT_LONG_SILENT_COMPLETION_POLL_DELAY_MS = 5_000;
 const AGENT_LONG_SILENT_COMPLETION_POLL_INTERVAL_MS = 5_000;
@@ -2495,18 +2496,19 @@ const ChatContent = ({ autoResume }: { autoResume: boolean }) => {
               branchedFromChatTitle={branchedFromChatTitle}
             />
 
-            {sandboxPreference === "e2b" && subscription !== "free" && (
-              <div className="mx-auto w-full max-w-[768px] px-4">
-                <CloudWorkspaceRecovery
-                  key={`${chatId}:${cloudConnectionFailure?.sequence ?? 0}`}
-                  surface={
-                    cloudConnectionFailure?.chatId === chatId
-                      ? "cloud_connection_error"
-                      : "workspace_status"
-                  }
-                />
-              </div>
-            )}
+            {sandboxPreference === "e2b" &&
+              (subscription !== "free" || isCloudAgentUnlockedForFree()) && (
+                <div className="mx-auto w-full max-w-[768px] px-4">
+                  <CloudWorkspaceRecovery
+                    key={`${chatId}:${cloudConnectionFailure?.sequence ?? 0}`}
+                    surface={
+                      cloudConnectionFailure?.chatId === chatId
+                        ? "cloud_connection_error"
+                        : "workspace_status"
+                    }
+                  />
+                </div>
+              )}
 
             {/* Chat interface */}
             <div className="bg-background flex flex-col flex-1 relative min-h-0">

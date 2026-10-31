@@ -126,6 +126,7 @@
     "iron-session": "^8.0.4",
     "isbinaryfile": "^6.0.0",
     "jose": "^6.2.12",
+    "jspdf": "^4.2.1",
     "jszip": "^3.10.2",
     "langchain": "1.5.9",
     "lucide-react": "1.59.0",

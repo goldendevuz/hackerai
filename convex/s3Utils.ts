@@ -27,9 +27,31 @@ function getRequiredEnvVar(name: string): string {
 }
 
 /**
+ * Solider.uz Phase 1: optional Cloudflare R2 backend instead of paid AWS S3.
+ * R2 is S3-API-compatible (10GB storage + 1M write/10M read ops/month free,
+ * zero egress). Toggle with STORAGE_PROVIDER=r2; default stays AWS S3 so this
+ * is additive, not a breaking change to upstream behavior.
+ */
+function isR2StorageEnabled(): boolean {
+  return process.env.STORAGE_PROVIDER === "r2";
+}
+
+function getR2Endpoint(): string {
+  const accountId = getRequiredEnvVar("R2_ACCOUNT_ID");
+  return `https://${accountId}.r2.cloudflarestorage.com`;
+}
+
+/**
  * Get S3 client with credentials from environment variables
  */
 function getLegacyS3StorageLocation(): S3StorageLocation {
+  if (isR2StorageEnabled()) {
+    // R2 has no AWS-style regions; "auto" lets Cloudflare route internally.
+    return {
+      region: "auto",
+      bucket: getRequiredEnvVar("R2_BUCKET_NAME"),
+    };
+  }
   const region = getRequiredEnvVar("AWS_S3_REGION");
   return {
     region,
@@ -46,6 +68,10 @@ export function resolveS3UploadLocation(
   requestedRegion?: S3StorageRegion,
 ): S3StorageLocation {
   const legacyLocation = getLegacyS3StorageLocation();
+  // Phase 1 runs a single R2 bucket; no multi-region AWS bucket routing.
+  if (isR2StorageEnabled()) {
+    return legacyLocation;
+  }
   if (!requestedRegion || !isRegionalS3StorageEnabled()) {
     return legacyLocation;
   }
@@ -85,9 +111,26 @@ export function getS3Client(
   location?: S3StorageLocation,
   options: { forcePathStyle?: boolean } = {},
 ): S3Client {
+  const region = location?.region ?? getLegacyS3StorageLocation().region;
+
+  if (isR2StorageEnabled()) {
+    const accessKeyId = getRequiredEnvVar("R2_ACCESS_KEY_ID");
+    const secretAccessKey = getRequiredEnvVar("R2_SECRET_ACCESS_KEY");
+    return new S3Client({
+      region,
+      endpoint: getR2Endpoint(),
+      // R2 requires path-style addressing.
+      forcePathStyle: true,
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      credentials: {
+        accessKeyId,
+        secretAccessKey,
+      },
+    });
+  }
+
   const accessKeyId = getRequiredEnvVar("AWS_S3_ACCESS_KEY_ID");
   const secretAccessKey = getRequiredEnvVar("AWS_S3_SECRET_ACCESS_KEY");
-  const region = location?.region ?? getLegacyS3StorageLocation().region;
 
   return new S3Client({
     region,

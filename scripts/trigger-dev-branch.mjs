@@ -1,6 +1,27 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+// Solider.uz change: some hosts (seen on WSL) advertise AAAA records for
+// Trigger.dev's S2 streamstore (a.s2.dev) but have no working IPv6 route.
+// Node's Happy Eyeballs connection racing then lets the dead IPv6 candidates
+// stall a request long enough that even the working IPv4 address times out,
+// surfacing as "S2Error: Max attempts (3) exhausted: Connection failed:
+// ETIMEDOUT" on every agent-long run. See
+// scripts/fix-ipv6-happy-eyeballs.cjs for the full explanation; this just
+// preloads it into the spawned Trigger CLI (and any Node process it forks)
+// via NODE_OPTIONS, inherited by spawn() below like the rest of process.env.
+// A no-op on hosts where IPv6 actually works.
+const ipv6FixPath = fileURLToPath(
+  new URL("./fix-ipv6-happy-eyeballs.cjs", import.meta.url),
+);
+process.env.NODE_OPTIONS = [
+  `--require ${JSON.stringify(ipv6FixPath)}`,
+  process.env.NODE_OPTIONS,
+]
+  .filter(Boolean)
+  .join(" ");
 
 const sanitizeBranchName = (value) => {
   const normalized = value

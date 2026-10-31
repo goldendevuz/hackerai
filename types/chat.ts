@@ -1,6 +1,7 @@
 import { UIMessage } from "ai";
 import { Id } from "@/convex/_generated/dataModel";
 import type { FileDetails, FilePart } from "./file";
+import { isModelTierUnlockedForFree } from "@/lib/experiments/solider-model-tiers";
 
 export type ChatMode = "agent" | "ask";
 
@@ -177,7 +178,8 @@ export function canUseMaxModel(
   options: MaxModelEntitlementOptions = {},
 ): boolean {
   if (subscription === "ultra") return true;
-  if (subscription === "free") return false;
+  // Solider.uz change: see lib/experiments/solider-model-tiers.ts.
+  if (subscription === "free") return isModelTierUnlockedForFree();
   return (
     options.extraUsageAvailable ?? canUseExtraUsage(options.extraUsageConfig)
   );
@@ -217,7 +219,8 @@ export function normalizeSelectedModelForSubscription(
   model: SelectedModel | null | undefined,
   subscription: SubscriptionTier,
 ): SelectedModel {
-  if (subscription === "free") return "auto";
+  // Solider.uz change: see lib/experiments/solider-model-tiers.ts.
+  if (subscription === "free" && !isModelTierUnlockedForFree()) return "auto";
   return model ?? "auto";
 }
 
@@ -225,7 +228,8 @@ export function normalizeSelectedModelOverrideForSubscription(
   model: SelectedModel | null | undefined,
   subscription: SubscriptionTier,
 ): SelectedModel | undefined {
-  if (subscription === "free") return "auto";
+  // Solider.uz change: see lib/experiments/solider-model-tiers.ts.
+  if (subscription === "free" && !isModelTierUnlockedForFree()) return "auto";
   return model ?? undefined;
 }
 

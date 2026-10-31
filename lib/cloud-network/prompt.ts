@@ -2,7 +2,7 @@ import { api } from "@/convex/_generated/api";
 import { getConvexClient } from "@/lib/db/convex-client";
 import { safeCountTokens } from "@/lib/token-utils";
 import {
-  DEFAULT_NETWORK_POLICY,
+  SOLIDER_LAB_DEFAULT_POLICY,
   normalizeNetworkPolicy,
   type NetworkSettings,
 } from "./policy";
@@ -16,8 +16,11 @@ const wrap = (text: string) =>
   `\n\n<cloud_network_settings>\n${boundary}\n${text}\n</cloud_network_settings>`;
 
 export function cloudNetworkPrompt(settings: NetworkSettings | null): string {
+  // Solider.uz change: match the labs-only default actually applied in
+  // lib/ai/tools/utils/sandbox.ts, so the agent is never told it has
+  // unrestricted access when the real sandbox default is restricted.
   const policy = normalizeNetworkPolicy(
-    settings?.policy ?? DEFAULT_NETWORK_POLICY,
+    settings?.policy ?? SOLIDER_LAB_DEFAULT_POLICY,
   );
   const verified = !settings || settings.status === "ready";
   const accessLabel = verified ? "Saved access" : "Desired access";

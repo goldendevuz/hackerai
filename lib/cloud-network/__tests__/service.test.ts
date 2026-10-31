@@ -1,7 +1,7 @@
 import { Sandbox } from "@e2b/code-interpreter";
 import { getConvexClient } from "@/lib/db/convex-client";
 import { ensureCloudNetwork, saveNetworkSettings } from "../service";
-import { normalizeNetworkPolicy } from "../policy";
+import { normalizeNetworkPolicy, SOLIDER_LAB_DEFAULT_POLICY } from "../policy";
 import { ConvexError } from "convex/values";
 
 jest.mock("@e2b/code-interpreter", () => ({
@@ -104,20 +104,25 @@ it("applies saved rules to a newly connected sandbox before returning it", async
   await ensureCloudNetwork(sandbox as any, "owner");
   expect(sandbox.updateNetwork).not.toHaveBeenCalled();
 });
-it("keeps default workspaces unchanged and fails closed on storage failure", async () => {
+it("keeps already-compliant default workspaces unchanged and fails closed on storage failure", async () => {
   const sandbox = workspace();
+  await sandbox.updateNetwork({
+    allowOut: SOLIDER_LAB_DEFAULT_POLICY.allow,
+    denyOut: ["0.0.0.0/0"],
+  });
+  sandbox.updateNetwork.mockClear();
   query.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
   await ensureCloudNetwork(sandbox as any, "owner");
   expect(sandbox.updateNetwork).not.toHaveBeenCalled();
   query.mockRejectedValueOnce(new Error("storage unavailable"));
   await expect(ensureCloudNetwork(sandbox as any, "owner")).rejects.toThrow();
 });
-it("reconciles inherited deny-all rules with the unsaved Internet access default without replacing the workspace", async () => {
+it("reconciles inherited deny-all rules with the unsaved labs-only default without replacing the workspace", async () => {
   const sandbox = workspace();
   await sandbox.updateNetwork({ allowOut: [], denyOut: ["0.0.0.0/0"] });
   sandbox.updateNetwork.mockClear();
   query.mockResolvedValue(null);
-  const defaultPolicy = { mode: "unrestricted", allow: [] };
+  const defaultPolicy = SOLIDER_LAB_DEFAULT_POLICY;
   mutation
     .mockReset()
     .mockResolvedValueOnce({
@@ -135,7 +140,7 @@ it("reconciles inherited deny-all rules with the unsaved Internet access default
     expect.objectContaining({ policy: defaultPolicy, expectedRevision: 0 }),
   );
   expect(sandbox.updateNetwork).toHaveBeenCalledWith(
-    { allowOut: [], denyOut: [] },
+    { allowOut: defaultPolicy.allow, denyOut: ["0.0.0.0/0"] },
     expect.anything(),
   );
   expect(mutation.mock.calls[1][1]).toMatchObject({ success: true });

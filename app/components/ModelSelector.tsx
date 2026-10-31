@@ -45,6 +45,7 @@ import {
   type SubscriptionTier,
 } from "@/types/chat";
 import { isAgentMode } from "@/lib/utils/mode-helpers";
+import { isModelTierUnlockedForFree } from "@/lib/experiments/solider-model-tiers";
 import { useGlobalState } from "@/app/contexts/GlobalState";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { redirectToPricing } from "@/app/hooks/usePricingDialog";
@@ -81,7 +82,8 @@ const isModelLockedForSubscription = (
   model: SelectedModel,
   extraUsageAvailable = false,
 ): boolean =>
-  subscription === "free" ||
+  // Solider.uz change: see lib/experiments/solider-model-tiers.ts.
+  (subscription === "free" && !isModelTierUnlockedForFree()) ||
   (isMaxModel(model) && !canUseMaxModel(subscription, { extraUsageAvailable }));
 
 const getLockedModelCta = (
@@ -438,7 +440,10 @@ export function ModelSelector({ value, onChange, mode }: ModelSelectorProps) {
   const { subscription } = useGlobalState();
   const isMobile = Boolean(useIsMobile());
 
-  const isFreeUser = subscription === "free";
+  // Solider.uz change: see lib/experiments/solider-model-tiers.ts. Every use
+  // of isFreeUser below is about the paid-model-tier UI gate specifically
+  // (not the separate cloud-Agent gate, which has its own unlock flag).
+  const isFreeUser = subscription === "free" && !isModelTierUnlockedForFree();
   const shouldCheckPersonalMaxExtraUsage =
     (subscription === "pro" || subscription === "pro-plus") &&
     (open || value === "hackerai-max");

@@ -132,7 +132,9 @@ it("reloads settings for each generation and recovers after unavailable or inval
       CLOUD_NETWORK_PROMPT_TOKENS,
     );
   }
-  expect(await prompt()).toContain("Saved access: Internet access");
+  const fallback = await prompt();
+  expect(fallback).toContain("Saved access: Allowed destinations only");
+  expect(fallback).toContain("- portswigger.net");
   expect(query).toHaveBeenCalledWith(
     expect.anything(),
     expect.objectContaining({ userId: "owner" }),

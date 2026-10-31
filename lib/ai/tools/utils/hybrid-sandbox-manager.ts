@@ -41,6 +41,7 @@ import {
   presenceHasConnectionId,
 } from "@/lib/centrifugo/presence";
 import { isExpectedAlreadyGoneCleanupError } from "@/lib/utils/cleanup-errors";
+import { isCloudAgentUnlockedForFree } from "@/lib/experiments/solider-cloud-agent";
 import {
   ensureCloudSandboxConnection,
   type CloudSandboxAcquisitionContext,
@@ -749,8 +750,10 @@ export class HybridSandboxManager implements SandboxManager {
     }
 
     // If preference is E2B, always use E2B (but block for free users)
+    // Solider.uz change: this fork has no payments, so "free" never
+    // upgrades. See lib/experiments/solider-cloud-agent.ts.
     if (this.sandboxPreference === "e2b") {
-      if (this.subscription === "free") {
+      if (this.subscription === "free" && !isCloudAgentUnlockedForFree()) {
         throw new Error("Cloud sandbox requires a paid plan.");
       }
       return this.getCloudSandbox();

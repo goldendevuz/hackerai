@@ -9,11 +9,14 @@ import {
   NetworkSettingsError,
 } from "@/lib/cloud-network/service";
 import { phLogger } from "@/lib/posthog/server";
+import { isCloudAgentUnlockedForFree } from "@/lib/experiments/solider-cloud-agent";
 
 export const maxDuration = 60;
 async function user(request: NextRequest) {
   const { userId, subscription } = await getUserIDAndPro(request);
-  if (subscription === "free")
+  // Solider.uz change: this fork has no payments, so "free" never upgrades.
+  // See lib/experiments/solider-cloud-agent.ts.
+  if (subscription === "free" && !isCloudAgentUnlockedForFree())
     throw new ChatSDKError(
       "forbidden:api",
       "Cloud network settings require a cloud-enabled plan.",

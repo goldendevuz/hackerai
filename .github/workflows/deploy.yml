@@ -1,0 +1,98 @@
+name: Deploy to production
+
+# Solider.uz change: builds the web app image on GitHub's runners (the
+# Hetzner server only has 2 CPUs / 4GB RAM shared with other projects --
+# too tight to build Next.js itself) and pushes it to GHCR. The server then
+# just pulls the new image and restarts the container; it never compiles
+# anything. Convex, Trigger.dev tasks and the Agent's E2B sandboxes are
+# separate cloud services this workflow never touches.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.sha_tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compute image tag
+        id: meta
+        run: echo "sha_tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v4.0.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@7488e639d3fb5d4b40b2d96f70d57cdbdcd0b35b # v6.18.0
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha_tag }}
+          build-args: |
+            NEXT_PUBLIC_CONVEX_URL=${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+            NEXT_PUBLIC_CONVEX_SITE_URL=${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }}
+            NEXT_PUBLIC_WORKOS_REDIRECT_URI=${{ secrets.NEXT_PUBLIC_WORKOS_REDIRECT_URI }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Copy compose file to server
+        uses: appleboy/scp-action@ff85f7cb9163397ed8e62c6d61b0cd5c0c2f8d11 # v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "docker-compose.yml"
+          target: "/root/projects/hackerai"
+
+      - name: Pull and restart on server
+        uses: appleboy/ssh-action@c6a3f2c7ad0a8bf4b9c5b9e8d0b3fca3a56a1c8e # v1.3.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /root/projects/hackerai
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            docker compose --profile full --profile tunnel pull web
+            docker compose --profile full --profile tunnel up -d --remove-orphans
+            docker image prune -f

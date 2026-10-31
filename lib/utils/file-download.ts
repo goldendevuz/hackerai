@@ -6,6 +6,30 @@ import {
 } from "@/app/hooks/useTauri";
 
 /**
+ * Downloads a Blob straight to the browser's default Downloads location via
+ * a disposable anchor element — skips the File System Access API's
+ * save-location picker that downloadFile() tries first on Chrome/Edge.
+ * Tauri-unaware on purpose: the Tauri native save bridge
+ * (saveFileToLocal) only accepts string content, so it has no binary path
+ * yet. Callers running inside Tauri should handle that themselves — use
+ * downloadFile() for text content, or show a toast for binary content it
+ * can't save until that bridge gains Blob support.
+ */
+export function downloadBlobDirect(filename: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/**
  * Options for file download/save operations.
  */
 interface DownloadFileOptions {

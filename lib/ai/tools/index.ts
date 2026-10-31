@@ -58,6 +58,7 @@ import { getSandboxWithFallbackGuard } from "./utils/sandbox-fallback";
 import { createE2BResourcePressureObserver } from "@/lib/analytics/sandbox-resource-pressure";
 import { E2B_COST_PER_MS } from "./utils/e2b-cost";
 import { phLogger } from "@/lib/posthog/server";
+import { isCloudAgentUnlockedForFree } from "@/lib/experiments/solider-cloud-agent";
 import type { TriggerRunRegion } from "@/lib/api/trigger-region";
 import type { CloudSandboxAcquisitionContext } from "./utils/cloud-sandbox";
 import type {
@@ -215,7 +216,13 @@ export const createTools = (
   };
 
   // Cloud protection: free agent users must use a user-owned execution host.
-  if (subscription === "free" && isAgentMode(mode)) {
+  // Solider.uz change: this fork has no payments, so "free" never upgrades.
+  // See lib/experiments/solider-cloud-agent.ts.
+  if (
+    subscription === "free" &&
+    isAgentMode(mode) &&
+    !isCloudAgentUnlockedForFree()
+  ) {
     if (!sandboxPreference || sandboxPreference === "e2b") {
       throw new Error(
         "Free agent mode requires a local sandbox. Cloud sandboxes are not available on the free plan.",

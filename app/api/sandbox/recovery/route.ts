@@ -11,6 +11,7 @@ import {
 } from "@/lib/cloud-recovery/service";
 import { failConsent } from "@/lib/cloud-recovery/store";
 import type { cloudWorkspaceRecoveryTask } from "@/trigger/cloud-workspace-recovery";
+import { isCloudAgentUnlockedForFree } from "@/lib/experiments/solider-cloud-agent";
 export const maxDuration = 60;
 const bodySchema = z.union([
   z.object({ token: z.string().uuid(), confirmed: z.boolean() }).strict(),
@@ -18,7 +19,10 @@ const bodySchema = z.union([
 ]);
 async function owner(request: NextRequest) {
   const { userId, subscription } = await getUserIDAndPro(request);
-  if (subscription === "free") throw new ChatSDKError("forbidden:api");
+  // Solider.uz change: this fork has no payments, so "free" never upgrades.
+  // See lib/experiments/solider-cloud-agent.ts.
+  if (subscription === "free" && !isCloudAgentUnlockedForFree())
+    throw new ChatSDKError("forbidden:api");
   if (
     process.env.VERCEL_ENV &&
     process.env.VERCEL_ENV !== process.env.HACKERAI_ENVIRONMENT

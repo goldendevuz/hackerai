@@ -5,6 +5,7 @@ import { getActiveTriggerRunsForUser } from "@/lib/db/actions";
 import { cancelSubagentsForUserDeletion } from "@/lib/db/subagents";
 import { closeAndCancelAgentResources } from "@/lib/api/agent-deletion-cleanup";
 import { phLogger } from "@/lib/posthog/server";
+import { isCloudAgentUnlockedForFree } from "@/lib/experiments/solider-cloud-agent";
 
 export const maxDuration = 60;
 const SANDBOX_DELETION_REASON = "terminal-sandbox-deleted";
@@ -21,7 +22,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Only allow subscribed users to delete sandboxes
-    if (subscription === "free") {
+    // Solider.uz change: this fork has no payments, so "free" never
+    // upgrades. See lib/experiments/solider-cloud-agent.ts.
+    if (subscription === "free" && !isCloudAgentUnlockedForFree()) {
       return new Response(JSON.stringify({ error: "Subscription required" }), {
         status: 403,
         headers: { "Content-Type": "application/json" },

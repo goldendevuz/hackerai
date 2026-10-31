@@ -58,6 +58,7 @@ import { isFreeDesktopSandboxAvailable } from "@/lib/activation/free-desktop-san
 import { useSelectedComputerConnection } from "@/app/hooks/useSelectedComputerConnection";
 import { DisconnectedComputerNotice } from "./DisconnectedComputerNotice";
 import { openSettingsDialog } from "@/lib/utils/settings-dialog";
+import { isCloudAgentUnlockedForFree } from "@/lib/experiments/solider-cloud-agent";
 
 interface ChatInputProps {
   onSubmit: (e: React.FormEvent) => void | boolean | Promise<void | boolean>;
@@ -662,7 +663,14 @@ const ChatInputContent = ({
   //    built-in bridge or a separately connected local runner
   // 2. Force local sandbox preference (not e2b)
   // 3. Force auto model selection
+  //
+  // Solider.uz change: this fork has no payments, so "free" never upgrades.
+  // These constraints exist to push free users toward a local sandbox or a
+  // paid plan; with the unlock flag set, free accounts get the same cloud
+  // (e2b) Agent access a paid account would. See
+  // lib/experiments/solider-cloud-agent.ts.
   const isFreeAgent =
+    !isCloudAgentUnlockedForFree() &&
     !!user &&
     !isCheckingProPlan &&
     subscription === "free" &&

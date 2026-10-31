@@ -1,0 +1,43 @@
+name: hackerai
+
+# Lokal: odatda kerak emas (pnpm dev / Vercel preview ishlatiladi).
+# Server: .env'da COMPOSE_PROFILES=full,tunnel -> `docker compose up -d --build`
+#
+# Convex, Trigger.dev task'lari va Agent'ning E2B sandboxlari o'z bulutida
+# ishlaydi -- bu compose faqat Next.js ilovasining o'zini serverda ishga
+# tushiradi, hech qanday ma'lumotlar bazasi yoki worker shart emas.
+services:
+  web:
+    # CI (.github/workflows/deploy.yml) builds this on GitHub's runners (the
+    # server's 2 CPUs are too tight for a Next.js build) and pushes it here.
+    # `docker compose pull && up -d` on the server just swaps the container;
+    # `docker compose build` still works locally if you want to build it
+    # yourself instead.
+    image: ghcr.io/goldendevuz/hackerai:latest
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_CONVEX_URL: ${NEXT_PUBLIC_CONVEX_URL:-}
+        NEXT_PUBLIC_CONVEX_SITE_URL: ${NEXT_PUBLIC_CONVEX_SITE_URL:-}
+        NEXT_PUBLIC_WORKOS_REDIRECT_URI: ${NEXT_PUBLIC_WORKOS_REDIRECT_URI:-}
+    env_file: .env
+    # Faqat localhost'da -- tashqariga Cloudflare tunnel orqali chiqadi
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    # 2 CPU / 4GB umumiy serverda boshqa loyihalarga joy qoldirish uchun.
+    mem_limit: 1536m
+    mem_reservation: 512m
+    restart: unless-stopped
+    profiles: ["full"]
+
+  # Cloudflare Tunnel: <domen> -> web:3000. Token: Zero Trust -> Networks -> Tunnels.
+  # Public hostname dashboard'da http://web:3000 ga yo'naltiriladi.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.3
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - web
+    restart: unless-stopped
+    profiles: ["tunnel"]

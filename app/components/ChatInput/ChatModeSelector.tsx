@@ -7,6 +7,7 @@ import { useGlobalState } from "@/app/contexts/GlobalState";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { AgentUpgradeDialog } from "./AgentUpgradeDialog";
 import { navigateToAuth, useTauri } from "@/app/hooks/useTauri";
+import { isCloudAgentUnlockedForFree } from "@/lib/experiments/solider-cloud-agent";
 
 export interface ChatModeSelectorProps {
   className?: string;
@@ -49,7 +50,9 @@ export function ChatModeSelector({ className }: ChatModeSelectorProps) {
       navigateToAuth("/signup", { preferSignInForReturningUser: true });
       return;
     }
-    if (subscription !== "free") {
+    // Solider.uz change: this fork has no payments, so "free" never
+    // upgrades. See lib/experiments/solider-cloud-agent.ts.
+    if (subscription !== "free" || isCloudAgentUnlockedForFree()) {
       setChatMode("agent");
     } else if (hasLocalSandbox) {
       enableLocalAgentMode();

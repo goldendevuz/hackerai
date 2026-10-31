@@ -12,6 +12,49 @@ export const DEFAULT_NETWORK_POLICY: NetworkPolicy = {
   allow: [],
 };
 
+/**
+ * Solider.uz change: platform default when a user has no saved network
+ * policy yet. Upstream falls back to DEFAULT_NETWORK_POLICY ("unrestricted")
+ * in that case, so a fresh sandbox has full internet access until someone
+ * opts into a restriction via Settings. For a labs-only product we want the
+ * opposite starting point: restricted to the one lab platform that needs no
+ * VPN (PortSwigger Web Security Academy) until the user's own policy (set
+ * through the existing CloudNetworkSettings UI / saveNetworkSettings, e.g.
+ * once a personal HackTheBox/TryHackMe VPN endpoint is added to `allow`)
+ * takes over. A user who has explicitly saved a policy of their own --
+ * "unrestricted" included -- is never affected; this only changes what a
+ * brand-new, never-configured account gets by default.
+ *
+ * Also allows the R2 upload domain: get_terminal_files and other generated-
+ * file delivery run `curl -X PUT <presigned-url>` *inside the sandbox*
+ * (see lib/ai/tools/utils/sandbox-file-uploader.ts), so that upload is
+ * subject to this same policy. Without it, every file a restricted-default
+ * sandbox tries to hand back to the user (reports, screenshots, PoCs) fails
+ * with a TLS handshake error indistinguishable from a real network problem
+ * -- discovered the hard way when an agent-generated PDF report silently
+ * failed to upload. Convex itself isn't a sandbox curl target, so it needs
+ * no entry here. (An AWS S3 deployment, STORAGE_PROVIDER unset, would need
+ * its bucket's `*.amazonaws.com` host here instead -- out of scope for this
+ * R2-only fork.)
+ */
+export const SOLIDER_LAB_DEFAULT_POLICY: NetworkPolicy = {
+  mode: "restricted",
+  allow: [
+    "portswigger.net",
+    // E2B's allowOut matches a bare domain exactly, not its subdomains
+    // (see node_modules/e2b SandboxNetworkConfig docs), so login and the
+    // lab platform's other subdomains need their own wildcard entry.
+    "*.portswigger.net",
+    "*.web-security-academy.net",
+    // Official Web Security Academy exploit/collaborator server, used by
+    // most JWT/SSRF/CSRF/XSS labs to host an attacker-controlled JWKS,
+    // redirect target, or callback -- not a third-party domain.
+    "exploit-server.net",
+    "*.exploit-server.net",
+    "*.r2.cloudflarestorage.com",
+  ],
+};
+
 function networkHost(value: string): string {
   try {
     if (!value || /[\s/@?#\\%:]/.test(value)) throw new Error("Invalid host");

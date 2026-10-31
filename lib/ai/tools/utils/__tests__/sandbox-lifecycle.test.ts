@@ -560,7 +560,17 @@ describe("E2B sandbox lease lifecycle", () => {
     expect(sandboxApi.create).toHaveBeenCalledWith(
       "terminal-agent-sandbox",
       expect.objectContaining({
-        network: { allowOut: [], denyOut: [] },
+        network: {
+          allowOut: [
+            "portswigger.net",
+            "*.portswigger.net",
+            "*.web-security-academy.net",
+            "exploit-server.net",
+            "*.exploit-server.net",
+            "*.r2.cloudflarestorage.com",
+          ],
+          denyOut: ["0.0.0.0/0"],
+        },
         timeoutMs: BASH_SANDBOX_AUTOPAUSE_TIMEOUT,
         lifecycle: { onTimeout: "pause", autoResume: true },
         secure: true,

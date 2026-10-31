@@ -1282,6 +1282,57 @@ const openrouter = createOpenRouter({
 
 type OpenRouterInstance = typeof openrouter;
 
+// Solider.uz Phase 1 ($0 budget): optionally route every OpenRouter registry
+// entry (primary, fallback chain, title, vision) to a pool of ":free" models.
+// Unset = upstream behavior. OPENROUTER_MODEL_OVERRIDE accepts a
+// comma-separated list; a single slug keeps the old one-model behavior.
+//
+// `baseProviders` below is built once at module load, so any JS-side pick
+// (hash, round-robin, random) made inside this factory freezes for the life
+// of the process — every request for a given named key would keep hitting
+// whatever that one pick resolved to, including every manual "Retry" in the
+// UI, which starts a brand-new run from the same primary key. Instead, send
+// the *entire* pool as OpenRouter's own `models` field via extraBody: that
+// list is read fresh per HTTP call (not cached), and OpenRouter itself tries
+// each entry in order server-side within one request — real multi-provider
+// failover, no per-call JS logic needed.
+// OpenRouter rejects a `models` array longer than 3 entries ("'models' array
+// must have 3 items or fewer"), so a longer configured list is truncated here
+// rather than left to fail server-side on every call that hits the limit.
+//
+// Solider.uz change: two independent pools, not one. OPENROUTER_MODEL_OVERRIDE
+// stays the paid/"HackerAI Standard+" pool (a few cheap, reliable models, not
+// actually free -- picked for low per-lab cost). OPENROUTER_FREE_MODEL_OVERRIDE
+// is a separate pool of genuine ":free" OpenRouter models, used only for the
+// keys buildProviderMap below marks as the free-tier default. Without this
+// split, every registry key -- "free"-named or not -- collapsed onto one pool,
+// so a user picking a paid-looking tier in the UI got no different behavior
+// than Auto, which defeated the point of unlocking that picker (see
+// lib/experiments/solider-model-tiers.ts).
+const buildOpenrouterPool = (envVar: string, maxEntries = 3): string[] =>
+  (process.env[envVar] ?? "")
+    .split(",")
+    .map((slug) => slug.trim())
+    .filter((slug) => slug.length > 0)
+    .slice(0, maxEntries);
+const poolToInstance = (pool: string[]): OpenRouterInstance | null =>
+  pool.length > 0
+    ? ((() =>
+        openrouter(pool[0], {
+          extraBody: { models: pool },
+        })) as unknown as OpenRouterInstance)
+    : null;
+const openrouterPaidOverride = poolToInstance(
+  buildOpenrouterPool("OPENROUTER_MODEL_OVERRIDE"),
+);
+const openrouterFreeOverride = poolToInstance(
+  buildOpenrouterPool("OPENROUTER_FREE_MODEL_OVERRIDE"),
+);
+const openrouterForRegistry: OpenRouterInstance =
+  openrouterPaidOverride ?? openrouter;
+const openrouterForRegistryFree: OpenRouterInstance =
+  openrouterFreeOverride ?? openrouterForRegistry;
+
 export const KIMI_K3_SLUG = "moonshotai/kimi-k3";
 export const GLM_5_2_SLUG = "z-ai/glm-5.2";
 export const GLM_5_3_SLUG = "z-ai/glm-5.3";
@@ -1320,15 +1371,23 @@ const buildProviderMap = (
   // Regular free Ask uses ask-model-free-glm with low reasoning per request.
   freeAskModelSlug = DEEPSEEK_V4_FLASH_VISION_SLUG,
   freeAgentModelSlug = DEEPSEEK_V4_FLASH_VISION_SLUG,
+  // Solider.uz change: see lib/experiments/solider-model-tiers.ts and the
+  // openrouterForRegistryFree comment above. Keys that are the free-tier
+  // default (named "...-free", or the free Agent auto-review/flash-routing
+  // target "model-glm-5.3-flash-agent", or a background system call that
+  // should stay cheap regardless of who triggered it) resolve through
+  // `orFree` instead of `or`, so Auto for a free account and an explicitly
+  // picked paid-looking tier are no longer the same pool.
+  orFree: OpenRouterInstance = or,
 ) =>
   ({
     [DEEPSEEK_1017_MODEL_KEY]: or(DEEPSEEK_1017_SLUG),
     "ask-model": or(GROK_4_6_SLUG),
-    "ask-model-free": or(freeAskModelSlug),
-    "ask-model-free-glm": or(GLM_5_3_FLASH_SLUG),
-    "ask-model-free-deepseek-v41": or(DEEPSEEK_V4_FLASH_VISION_SLUG),
+    "ask-model-free": orFree(freeAskModelSlug),
+    "ask-model-free-glm": orFree(GLM_5_3_FLASH_SLUG),
+    "ask-model-free-deepseek-v41": orFree(DEEPSEEK_V4_FLASH_VISION_SLUG),
     "agent-model": or(GROK_4_6_SLUG),
-    "agent-model-free": or(freeAgentModelSlug),
+    "agent-model-free": orFree(freeAgentModelSlug),
     "model-grok-4.6": or(GROK_4_6_SLUG),
     // Separate internal keys use the same Grok 4.5 provider model while
     // provider reasoning options distinguish Standard from Pro vision.
@@ -1346,21 +1405,26 @@ const buildProviderMap = (
     "model-glm-5.3": or(GLM_5_3_SLUG),
     "model-glm-5.3-flash": or(GLM_5_3_FLASH_SLUG),
     "model-glm-5.3-flash-pro": or(GLM_5_3_FLASH_SLUG),
-    "model-glm-5.3-flash-agent": or(GLM_5_3_FLASH_SLUG),
+    "model-glm-5.3-flash-agent": orFree(GLM_5_3_FLASH_SLUG),
     "model-deepseek-v4-flash-vision": or(DEEPSEEK_V4_FLASH_VISION_SLUG),
     "model-deepseek-v4-flash-vision-pro": or(DEEPSEEK_V4_FLASH_VISION_SLUG),
     "model-kimi-k3": or(KIMI_K3_SLUG),
     "fallback-agent-model": or(GROK_4_6_SLUG),
     "fallback-ask-model": or(GROK_4_6_SLUG),
     // GLM supports the title schema and requires reasoning to stay enabled.
-    "title-generator-model": or(GLM_5_3_FLASH_SLUG),
+    "title-generator-model": orFree(GLM_5_3_FLASH_SLUG),
     // Image understanding for text-only routes. The resulting description is
     // injected as untrusted text; this model never becomes the active agent.
-    "auxiliary-vision-model": or(AUXILIARY_VISION_SLUG),
+    "auxiliary-vision-model": orFree(AUXILIARY_VISION_SLUG),
   }) as Record<string, any>;
 
 const baseProviders: ReturnType<typeof buildProviderMap> = {
-  ...buildProviderMap(openrouter),
+  ...buildProviderMap(
+    openrouterForRegistry,
+    undefined,
+    undefined,
+    openrouterForRegistryFree,
+  ),
   [ABLITERATION_MODEL_KEY]: abliteration(ABLITERATION_LARGE_FLASH_MODEL_ID),
   [ABLITERATION_LARGE_V2_MODEL_KEY]: abliteration(
     ABLITERATION_LARGE_FLASH_MODEL_ID,

@@ -73,6 +73,7 @@ import {
   SYSTEM_PROMPT_RUNTIME_BOUNDARY,
 } from "@/lib/system-prompt";
 import { isAgentMode } from "@/lib/utils/mode-helpers";
+import { isCloudAgentUnlockedForFree } from "@/lib/experiments/solider-cloud-agent";
 import {
   extractErrorDetails,
   getProviderStatusCode,
@@ -1541,6 +1542,9 @@ export function assertFreeAgentGates(args: {
 }): void {
   const { mode, subscription, sandboxPreference } = args;
   if (!isAgentMode(mode) || subscription !== "free") return;
+  // Solider.uz change: this fork has no payments, so "free" never upgrades.
+  // See lib/experiments/solider-cloud-agent.ts.
+  if (isCloudAgentUnlockedForFree()) return;
 
   const isLocalSandbox = sandboxPreference && sandboxPreference !== "e2b";
   if (!isLocalSandbox) {

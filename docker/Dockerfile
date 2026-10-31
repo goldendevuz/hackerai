@@ -71,6 +71,9 @@ RUN apt-get update && \
     dnsutils \
     iproute2 \
     net-tools \
+    # Solider.uz addition: needed for HTB/TryHackMe VPN-based lab access
+    # (mode A). Not yet wired up to anything -- see CHANGES.md.
+    openvpn \
     whois \
     traceroute \
     netcat-traditional \
@@ -130,6 +133,8 @@ RUN apt-get update && \
     tmux \
     chromium \
     fonts-liberation \
+    # Report PDFs (hackerai_report.py) need a Unicode-capable font
+    fonts-dejavu-core \
     fonts-noto-cjk \
     # Forensics
     binwalk \
@@ -447,6 +452,7 @@ RUN set -eux; \
 # Final Cleanup & Permissions
 # ============================================================================
 COPY verify_trust.py test_go_trust.py verify_trust_go_test.go /usr/local/lib/hackerai/
+COPY hackerai_report.py hackerai_report_example.json /usr/local/lib/hackerai/
 # E2B dereferences certificate symlinks into its boot seed. Remove materialized
 # copies of the distrusted roots, refresh the store and seed, then test TLS.
 RUN python3 -B /usr/local/lib/hackerai/test_go_trust.py && \

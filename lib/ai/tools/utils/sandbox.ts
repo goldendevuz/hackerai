@@ -3,7 +3,10 @@ import {
   clearResumeFailures,
 } from "@/lib/cloud-recovery/store";
 import { readNetworkSettings } from "@/lib/cloud-network/service";
-import { DEFAULT_NETWORK_POLICY, e2bNetwork } from "@/lib/cloud-network/policy";
+import {
+  e2bNetwork,
+  SOLIDER_LAB_DEFAULT_POLICY,
+} from "@/lib/cloud-network/policy";
 import {
   CloudAcquisitionTimeoutError,
   CLOUD_RESUME_DEADLINE_MS,
@@ -388,9 +391,12 @@ export const ensureSandboxConnection = async (
       signal?.throwIfAborted();
       try {
         const networkSettings = await readNetworkSettings(userID);
+        // Solider.uz change: always apply a policy, falling back to the
+        // labs-only default instead of leaving a never-configured account
+        // unrestricted (see SOLIDER_LAB_DEFAULT_POLICY in cloud-network/policy.ts).
         const sandbox = await Sandbox.create(createCluster.template, {
           network: e2bNetwork(
-            networkSettings?.policy ?? DEFAULT_NETWORK_POLICY,
+            networkSettings?.policy ?? SOLIDER_LAB_DEFAULT_POLICY,
           ),
           ...createCluster.connectionOptions,
           ...requestOptions,

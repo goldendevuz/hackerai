@@ -25,6 +25,7 @@ import {
 import { stripOpenRouterReasoningMetadataFromMessages } from "@/lib/chat/provider-metadata-sanitizer";
 import { usesGlmFlashForStandardVision } from "@/lib/chat/auxiliary-vision-eligibility";
 import { DEEPSEEK_1017_MODEL_KEY } from "@/lib/experiments/paid-deepseek-1017";
+import { isModelTierUnlockedForFree } from "@/lib/experiments/solider-model-tiers";
 /**
  * Get maximum steps allowed for a request.
  * Agent mode: 500 steps. Ask mode: 15 steps (free users only).
@@ -67,9 +68,19 @@ export function selectModel(
     subscription,
     options,
   );
+  // Solider.uz change: see lib/experiments/solider-model-tiers.ts. When
+  // unlocked, an explicitly picked paid-looking tier routes to its real
+  // registry key (the cheap pool via orPaid in providers.ts) instead of
+  // always collapsing to the free-tier autoModel below, so Auto and an
+  // explicit choice are no longer identical for a free account.
+  const freeTierPaidRoutingUnlocked =
+    subscription === "free" && isModelTierUnlockedForFree();
   // Resolve explicit Standard before legacy media promotions so text, images
   // and PDFs retain the same native DeepSeek snapshot on every paid plan.
-  if (subscription !== "free" && allowedSelectedModel === "hackerai-standard") {
+  if (
+    (subscription !== "free" || freeTierPaidRoutingUnlocked) &&
+    allowedSelectedModel === "hackerai-standard"
+  ) {
     return resolveAgentTierToProviderKey(allowedSelectedModel);
   }
   // Pro/Pro+ Auto uses GLM Flash for lower-cost direct vision.
@@ -81,7 +92,10 @@ export function selectModel(
   // Paid Auto text and PDF turns use DeepSeek V4.1 Flash on every plan.
   const paidAutoTextModel: ModelName = "model-deepseek-v4-flash-vision-pro";
   // Paid Agent Pro accepts original images without a separate vision route.
-  if (subscription !== "free" && allowedSelectedModel === "hackerai-pro") {
+  if (
+    (subscription !== "free" || freeTierPaidRoutingUnlocked) &&
+    allowedSelectedModel === "hackerai-pro"
+  ) {
     return resolveAgentTierToProviderKey(allowedSelectedModel);
   }
   // Direct image routes retain Standard vision reasoning for Auto.
@@ -112,7 +126,10 @@ export function selectModel(
 
   // Free users always route through the auto router; paid users may pick an
   // entitled Agent tier explicitly.
-  if (isAutoSelection || subscription === "free") {
+  if (
+    isAutoSelection ||
+    (subscription === "free" && !freeTierPaidRoutingUnlocked)
+  ) {
     return autoModel;
   }
 

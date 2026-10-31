@@ -9,7 +9,7 @@ import {
   readCloudWorkspaceState,
 } from "@/lib/ai/tools/utils/cloud-workspace-guard";
 import {
-  DEFAULT_NETWORK_POLICY,
+  SOLIDER_LAB_DEFAULT_POLICY,
   e2bNetwork,
   type NetworkPolicy,
   type NetworkSettings,
@@ -229,13 +229,18 @@ export async function ensureCloudNetwork(
   }
   await applyNetwork(
     userId,
-    saved ? undefined : { policy: DEFAULT_NETWORK_POLICY, expectedRevision: 0 },
+    saved
+      ? undefined
+      : { policy: SOLIDER_LAB_DEFAULT_POLICY, expectedRevision: 0 },
     sandbox,
     signal,
   );
 }
+// Solider.uz change: show/apply the labs-only default (see
+// SOLIDER_LAB_DEFAULT_POLICY) so Settings never displays "unrestricted" for
+// an account that is actually getting the restricted default applied.
 export const defaultNetworkSettings = (): NetworkSettings => ({
-  policy: DEFAULT_NETWORK_POLICY,
+  policy: SOLIDER_LAB_DEFAULT_POLICY,
   revision: 0,
   status: "ready",
 });

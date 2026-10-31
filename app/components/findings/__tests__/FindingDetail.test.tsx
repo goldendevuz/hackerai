@@ -17,9 +17,20 @@ import type { FindingDetailRecord } from "@/types/finding";
 
 jest.mock("@/lib/utils/file-download", () => ({
   downloadFile: jest.fn<any>().mockResolvedValue({ outcome: "success" }),
+  downloadBlobDirect: jest.fn<any>(),
 }));
-const { downloadFile } =
+const { downloadBlobDirect } =
   require("@/lib/utils/file-download") as typeof import("@/lib/utils/file-download");
+
+// jsdom's Blob polyfill has no .text()/.arrayBuffer(); FileReader is the
+// portable way to read a Blob's content back out in this test environment.
+const readBlobAsText = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
+  });
 import { renderFindingMarkdown } from "@/lib/findings/markdown";
 
 Object.defineProperty(global, "ResizeObserver", {
@@ -340,14 +351,19 @@ describe("FindingDetail", () => {
   });
 });
 
-it("downloads the saved report in the sidebar without another investigation", () => {
+it("downloads the saved report in the sidebar without another investigation", async () => {
   render(<FindingDetail finding={finding} surface="computer_sidebar" />);
   fireEvent.click(screen.getByRole("button", { name: "Download report" }));
-  expect(downloadFile).toHaveBeenCalledWith({
-    filename: "finding-finding-1.md",
-    content: renderFindingMarkdown(finding),
-    mimeType: "text/markdown;charset=utf-8",
-  });
+  // Goes straight to Downloads (no File System Access save-location picker),
+  // matching the PDF button — see downloadBlobDirect in file-download.ts.
+  expect(downloadBlobDirect).toHaveBeenCalledWith(
+    "finding-finding-1.md",
+    expect.any(Blob),
+  );
+  const [, blob] = (downloadBlobDirect as jest.Mock).mock.calls[0];
+  await expect(readBlobAsText(blob)).resolves.toBe(
+    renderFindingMarkdown(finding),
+  );
 });
 it("preserves evidence, patches and closure in Markdown, including embedded code fences", () => {
   const poc = "print('example')\n```\n# embedded text\n````";
@@ -391,7 +407,7 @@ it("shows and exports saved verification gaps without calling them checked", () 
   expect(renderFindingMarkdown(saved)).toContain("/tmp/exploit.http");
 });
 
-it("shows assessment limits and includes them in the downloaded report", () => {
+it("shows assessment limits and includes them in the downloaded report", async () => {
   const saved = {
     ...finding,
     confidence: "medium" as const,
@@ -403,11 +419,9 @@ it("shows assessment limits and includes them in the downloaded report", () => {
   expect(screen.getByText(saved.severity_change_conditions)).toBeVisible();
   expect(screen.getByText("medium", { exact: true })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Download report" }));
-  expect(downloadFile).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      content: expect.stringContaining(saved.counterevidence),
-    }),
-  );
+  const calls = (downloadBlobDirect as jest.Mock).mock.calls;
+  const [, blob] = calls[calls.length - 1];
+  await expect(readBlobAsText(blob)).resolves.toContain(saved.counterevidence);
 });
 
 it("does not infer confidence for an older saved report", () => {

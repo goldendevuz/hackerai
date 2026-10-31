@@ -10,7 +10,7 @@ import { assertUserCanAccessChatHistory } from "./lib/suspensionGuards";
 import { networkPolicy, networkSettings } from "./cloudNetworkValidators";
 import {
   normalizeNetworkPolicy,
-  DEFAULT_NETWORK_POLICY,
+  SOLIDER_LAB_DEFAULT_POLICY,
 } from "../lib/cloud-network/policy";
 const auth = { serviceKey: v.string(), userId: v.string() };
 async function row(ctx: QueryCtx | MutationCtx, userId: string) {
@@ -56,7 +56,7 @@ export const begin = mutation({
     if (!saved && !args.policy) return null;
     const policy = args.policy
       ? normalizeNetworkPolicy(args.policy)
-      : (saved?.policy ?? DEFAULT_NETWORK_POLICY);
+      : (saved?.policy ?? SOLIDER_LAB_DEFAULT_POLICY);
     const revision = (saved?.revision ?? 0) + (args.policy ? 1 : 0);
     const next = {
       policy,

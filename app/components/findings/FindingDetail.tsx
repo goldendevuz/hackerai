@@ -10,6 +10,7 @@ import {
   Clock3,
   Copy,
   Download,
+  FileDown,
   LockKeyhole,
   MessageSquareText,
   ShieldAlert,
@@ -47,8 +48,10 @@ import type {
   FindingDetailRecord,
 } from "@/types/finding";
 import { cn } from "@/lib/utils";
-import { downloadFile } from "@/lib/utils/file-download";
+import { downloadFile, downloadBlobDirect } from "@/lib/utils/file-download";
+import { isTauriEnvironment } from "@/app/hooks/useTauri";
 import { renderFindingMarkdown } from "@/lib/findings/markdown";
+import { renderFindingPdf } from "@/lib/findings/pdf-report";
 import { getSourceMessageHref } from "@/lib/findings/source-message";
 import {
   getFindingSeverityClasses,
@@ -331,6 +334,76 @@ export function FindingDetail({
     ? { ...persistedFinding, ...localClosure }
     : persistedFinding;
 
+  const handleDownloadPdf = async () => {
+    // The Tauri desktop save bridge only writes string content (see
+    // saveFileToLocal in app/hooks/useTauri.ts); it has no binary-file path
+    // yet, so a PDF blob can't go through it. Browser download still works
+    // inside the Desktop WebView's external-link flow, but a direct save
+    // here would silently write a corrupt file, so this stays web-only
+    // until that bridge gains binary support.
+    if (isTauriEnvironment()) {
+      toast.info("PDF export isn't available in the Desktop app yet.", {
+        description: "Use Download report (Markdown) on Desktop for now.",
+      });
+      return;
+    }
+    try {
+      const blob = await renderFindingPdf(finding);
+      downloadBlobDirect(
+        `finding-${finding.finding_id.replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf`,
+        blob,
+      );
+      captureFindingEvent({
+        operation: "export",
+        outcome: "initiated",
+        format: "pdf",
+        finding_id: finding.finding_id,
+        report_updated_at: finding.updated_at,
+      });
+    } catch (error) {
+      toast.error("Failed to generate PDF", {
+        description:
+          error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  };
+
+  // Mirrors handleDownloadPdf: skip downloadFile()'s File System Access API
+  // save-location picker on the web (Chrome/Edge) and go straight to
+  // Downloads, matching the PDF button. Tauri keeps the native save dialog
+  // via downloadFile() — saveFileToLocal there handles string content fine,
+  // unlike the PDF blob case above.
+  const handleDownloadMarkdown = async () => {
+    const filename = `finding-${finding.finding_id.replace(/[^a-zA-Z0-9_-]/g, "_")}.md`;
+    const content = renderFindingMarkdown(finding);
+    if (isTauriEnvironment()) {
+      const result = await downloadFile({
+        filename,
+        content,
+        mimeType: "text/markdown;charset=utf-8",
+      });
+      captureFindingEvent({
+        operation: "export",
+        ...result,
+        format: "markdown",
+        finding_id: finding.finding_id,
+        report_updated_at: finding.updated_at,
+      });
+      return;
+    }
+    downloadBlobDirect(
+      filename,
+      new Blob([content], { type: "text/markdown;charset=utf-8" }),
+    );
+    captureFindingEvent({
+      operation: "export",
+      outcome: "initiated",
+      format: "markdown",
+      finding_id: finding.finding_id,
+      report_updated_at: finding.updated_at,
+    });
+  };
+
   const handleCloseFinding = async () => {
     if (!closureContext.trim()) return;
     setIsClosing(true);
@@ -467,28 +540,22 @@ export function FindingDetail({
             ) : null}
           </div>
 
-          <div>
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
-              onClick={() =>
-                void downloadFile({
-                  filename: `finding-${finding.finding_id.replace(/[^a-zA-Z0-9_-]/g, "_")}.md`,
-                  content: renderFindingMarkdown(finding),
-                  mimeType: "text/markdown;charset=utf-8",
-                }).then((result) =>
-                  captureFindingEvent({
-                    operation: "export",
-                    ...result,
-                    format: "markdown",
-                    finding_id: finding.finding_id,
-                    report_updated_at: finding.updated_at,
-                  }),
-                )
-              }
+              onClick={() => void handleDownloadMarkdown()}
             >
               <Download className="size-4" aria-hidden="true" />
               Download report
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleDownloadPdf()}
+            >
+              <FileDown className="size-4" aria-hidden="true" />
+              Download PDF
             </Button>
           </div>
 

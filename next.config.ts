@@ -32,6 +32,10 @@ if (
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // Solider.uz change: standalone output for the self-hosted Docker image
+  // (docker-compose.yml). Guarded so Vercel's own build (no DOCKER_BUILD env)
+  // keeps its existing output mode unchanged.
+  ...(process.env.DOCKER_BUILD === "true" && { output: "standalone" }),
   env: {
     NEXT_PUBLIC_HACKERAI_BUILD_COMMIT: publicBuildCommit,
   },

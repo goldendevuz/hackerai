@@ -1,6 +1,7 @@
 "use client";
 
 import { CloudNetworkSettings } from "./CloudNetworkSettings";
+import { isCloudAgentUnlockedForFree } from "@/lib/experiments/solider-cloud-agent";
 
 import {
   Select,
@@ -73,7 +74,13 @@ const AgentsTab = () => {
         </div>
       </div>
 
-      {subscription !== "free" && <CloudNetworkSettings />}
+      {/* Solider.uz change: this fork has no payments, so "free" never
+          upgrades. Hiding network settings from every account would make
+          the cloud sandbox's allowed-destinations list unreachable.
+          See lib/experiments/solider-cloud-agent.ts. */}
+      {(subscription !== "free" || isCloudAgentUnlockedForFree()) && (
+        <CloudNetworkSettings />
+      )}
 
       {/* Queue Messages - Only show for Pro/Ultra/Team users */}
       {subscription !== "free" && (
