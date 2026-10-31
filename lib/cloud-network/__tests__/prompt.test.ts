@@ -134,7 +134,7 @@ it("reloads settings for each generation and recovers after unavailable or inval
   }
   const fallback = await prompt();
   expect(fallback).toContain("Saved access: Allowed destinations only");
-  expect(fallback).toContain("- portswigger.net");
+  expect(fallback).toContain("- *.portswigger.net");
   expect(query).toHaveBeenCalledWith(
     expect.anything(),
     expect.objectContaining({ userId: "owner" }),

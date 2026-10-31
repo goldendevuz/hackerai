@@ -56,6 +56,17 @@ export const SOLIDER_LAB_DEFAULT_POLICY: NetworkPolicy = {
     "defense.gov",
     "*.defense.gov",
     "*.mil",
+    // GitLab bug bounty: cloning in-scope source repos and building them
+    // (gitlab-shell, gitlab-pages, etc. are Go modules, so `go build` needs
+    // the module proxy too).
+    "gitlab.com",
+    "*.gitlab.com",
+    "github.com",
+    "*.github.com",
+    "*.githubusercontent.com",
+    "proxy.golang.org",
+    "sum.golang.org",
+    "*.storage.googleapis.com",
   ],
 };
 
