@@ -71,6 +71,17 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     optimizePackageImports: ["lucide-react", "date-fns"],
+    // Solider.uz change: Next.js 16's Server Actions CSRF check compares
+    // Origin against Host (or X-Forwarded-Host). Behind the Cloudflare
+    // Tunnel -> cloudflared -> container hop, the Host header the app sees
+    // doesn't match the public domain, so without this allowlist every
+    // Server Action (including AuthKit's session check) is silently
+    // rejected and the client spins forever on "Connecting...".
+    ...(process.env.DOCKER_BUILD === "true" && {
+      serverActions: {
+        allowedOrigins: ["solider.univel.uz"],
+      },
+    }),
   },
   ...(process.env.NODE_ENV === "development" && {
     logging: {
