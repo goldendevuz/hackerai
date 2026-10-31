@@ -30,6 +30,35 @@ services:
     restart: unless-stopped
     profiles: ["full"]
 
+  # Rate-limiting backend. lib/rate-limit/redis.ts and the Trigger.dev tasks
+  # (trigger/agent-long.ts, trigger/subagent.ts) both expect an Upstash-style
+  # REST Redis (UPSTASH_REDIS_REST_URL/TOKEN) so one user can't burn through
+  # the shared OpenRouter budget. Upstash's own serverless-redis-http (SRH)
+  # puts that REST API in front of a plain self-hosted Redis -- free, no
+  # external account needed. SRH must be reachable from Trigger.dev's own
+  # cloud workers (not just this server), so it's published on a host port
+  # with SRH_TOKEN as the only auth; redis itself stays internal-only.
+  redis:
+    image: redis:8.8-alpine
+    command: redis-server --save 60 1 --appendonly yes
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    profiles: ["full"]
+
+  redis-http:
+    image: hiett/serverless-redis-http:0.0.10
+    environment:
+      SRH_MODE: env
+      SRH_TOKEN: ${SRH_TOKEN:-}
+      SRH_CONNECTION_STRING: redis://redis:6379
+    ports:
+      - "${REDIS_HTTP_PORT:-8079}:80"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    profiles: ["full"]
+
   # Cloudflare Tunnel: <domen> -> web:3000. Token: Zero Trust -> Networks -> Tunnels.
   # Public hostname dashboard'da http://web:3000 ga yo'naltiriladi.
   cloudflared:
@@ -41,3 +70,6 @@ services:
       - web
     restart: unless-stopped
     profiles: ["tunnel"]
+
+volumes:
+  redis-data:
