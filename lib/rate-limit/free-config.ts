@@ -28,6 +28,18 @@ export const getFreeRequestLimit = (policy?: FreeLimitPolicy): number => {
     : normal;
 };
 
+// Solider.uz change: optional standalone daily spend cap for a free-tier
+// quota subject, independent of the PostHog-gated agentDailyBudget
+// experiment above (which requires POSTHOG_PROJECT_TOKEN to ever assign a
+// user and does nothing on a self-hosted fork without PostHog configured).
+// Unset/zero means no daily cap -- only the monthly cap applies.
+export const getFreeDailyCostLimitDollars = (): number => {
+  const configuredLimit = Number(process.env.FREE_DAILY_COST_LIMIT_USD);
+  return Number.isFinite(configuredLimit) && configuredLimit > 0
+    ? configuredLimit
+    : 0;
+};
+
 export const getFreeMonthlyCostLimitDollars = (
   policy?: FreeLimitPolicy,
 ): number => {

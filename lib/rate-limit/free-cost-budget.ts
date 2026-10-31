@@ -2,10 +2,12 @@ import { ChatSDKError } from "@/lib/errors";
 import { getLimitPressureContext } from "@/lib/limit-pressure";
 import { FREE_AGENT_DAILY_COST_DOLLARS } from "@/lib/experiments/free-agent-budget";
 import type { FreeLimitPolicy } from "./free-config";
+import { getFreeDailyCostLimitDollars } from "./free-config";
 import {
   checkFreeMonthlyCostLimit,
   type FreeMonthlyCostSnapshot,
 } from "./free-monthly-cost";
+import { checkFreeDailyCostLimit } from "./free-daily-cost";
 import { createRedisClient } from "./redis";
 import { POINTS_PER_DOLLAR } from "./token-bucket";
 
@@ -20,7 +22,28 @@ export async function checkFreeCostBudget(
   policy?: FreeLimitPolicy,
 ): Promise<FreeMonthlyCostSnapshot> {
   const window = policy?.agentDailyBudget;
-  if (!window) return checkFreeMonthlyCostLimit(subject, policy);
+  if (!window) {
+    const monthly = await checkFreeMonthlyCostLimit(subject, policy);
+    // Solider.uz change: optional standalone FREE_DAILY_COST_LIMIT_USD cap
+    // (see free-daily-cost.ts), independent of the PostHog-gated
+    // agentDailyBudget experiment above. Throws first if the daily cap is
+    // already exhausted; otherwise the tighter of the two caps' remaining
+    // budget/limit is reported so BudgetMonitor's mid-stream projection
+    // (which only understands one "monthly-shaped" snapshot) stops the
+    // stream at whichever cap binds first.
+    if (getFreeDailyCostLimitDollars() <= 0) return monthly;
+    const daily = await checkFreeDailyCostLimit(subject);
+    if (daily.dailyRemainingAtStart < monthly.monthlyRemainingAtStart) {
+      return {
+        ...monthly,
+        monthlyLimitPoints: daily.dailyLimitPoints,
+        monthlyRemainingAtStart: daily.dailyRemainingAtStart,
+        monthlyResetTime: daily.dailyResetTime,
+        capReasonOnExhaustion: "free_daily_cost_exhausted",
+      };
+    }
+    return monthly;
+  }
   if (Date.now() >= window.resetTimestamp)
     throw new ChatSDKError(
       "rate_limit:chat",

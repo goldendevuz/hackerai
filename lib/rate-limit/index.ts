@@ -96,6 +96,10 @@ export {
   recordFreeMonthlyCost,
 } from "./free-monthly-cost";
 export {
+  checkFreeDailyCostLimit,
+  recordFreeDailyCost,
+} from "./free-daily-cost";
+export {
   getPaidDailyFreeAllowanceStatus,
   hasPaidDailyFreeAllowanceConsent,
   reservePaidDailyFreeAllowanceRequest,

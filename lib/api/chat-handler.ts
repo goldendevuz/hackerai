@@ -74,6 +74,7 @@ import {
   paidDailyFreeAllowanceStatusToMetadata,
   recordPaidDailyFreeAllowanceCost,
   recordFreeMonthlyCost,
+  recordFreeDailyCost,
   replaceUsageSettlementState,
   reservePaidDailyFreeAllowanceRequest,
   shouldSettleUsageMidRun,
@@ -1411,6 +1412,10 @@ export const createChatHandler = () => {
                     );
                   } else {
                     await recordFreeMonthlyCost(
+                      freeUsageSubject,
+                      usageCostRecord.costDollars,
+                    );
+                    await recordFreeDailyCost(
                       freeUsageSubject,
                       usageCostRecord.costDollars,
                     );

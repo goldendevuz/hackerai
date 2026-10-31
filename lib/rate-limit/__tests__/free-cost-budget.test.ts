@@ -6,12 +6,14 @@ import {
   checkFreeMonthlyCostLimit,
   recordFreeMonthlyCost,
 } from "../free-monthly-cost";
+import { checkFreeDailyCostLimit } from "../free-daily-cost";
 import { createRedisClient } from "../redis";
 import type { FreeLimitPolicy } from "../free-config";
 import { isHandledUserRateLimitError } from "../error-classification";
 
 jest.mock("../redis");
 jest.mock("../free-monthly-cost");
+jest.mock("../free-daily-cost");
 const get = jest.fn();
 const evalCost = jest.fn();
 const policy: FreeLimitPolicy = {
@@ -41,6 +43,46 @@ it("control preserves the regional monthly budget and existing ledger", async ()
   await checkFreeCostBudget("quota", regional);
   expect(checkFreeMonthlyCostLimit).toHaveBeenCalledWith("quota", regional);
   expect(get).not.toHaveBeenCalled();
+  // No FREE_DAILY_COST_LIMIT_USD configured: the standalone daily cap must
+  // never be consulted, so it can't change behavior for a deployment that
+  // hasn't opted in.
+  expect(checkFreeDailyCostLimit).not.toHaveBeenCalled();
+});
+
+it("reports the standalone daily cap's remaining budget when it is tighter than the monthly cap", async () => {
+  const originalEnv = process.env.FREE_DAILY_COST_LIMIT_USD;
+  process.env.FREE_DAILY_COST_LIMIT_USD = "0.3";
+  try {
+    jest.mocked(checkFreeMonthlyCostLimit).mockResolvedValue({
+      monthlyLimitPoints: 2500,
+      monthlyRemainingAtStart: 2000,
+      monthlyResetTime: new Date("2026-11-01T00:00:00Z"),
+      extraUsageEnabledAtStart: false,
+      extraUsageHasBalanceAtStart: false,
+      extraUsageBalanceAtStart: 0,
+      extraUsageAutoReload: false,
+    });
+    jest.mocked(checkFreeDailyCostLimit).mockResolvedValue({
+      dailyLimitPoints: 3000,
+      dailyRemainingAtStart: 500,
+      dailyResetTime: new Date("2026-10-02T00:00:00Z"),
+    });
+
+    const snapshot = await checkFreeCostBudget("quota", {
+      dailyRequests: 3,
+      monthlyCostDollars: 0.25,
+    });
+
+    expect(snapshot.monthlyRemainingAtStart).toBe(500);
+    expect(snapshot.monthlyLimitPoints).toBe(3000);
+    expect(snapshot.capReasonOnExhaustion).toBe("free_daily_cost_exhausted");
+    expect(snapshot.monthlyResetTime.toISOString()).toBe(
+      "2026-10-02T00:00:00.000Z",
+    );
+  } finally {
+    if (originalEnv === undefined) delete process.env.FREE_DAILY_COST_LIMIT_USD;
+    else process.env.FREE_DAILY_COST_LIMIT_USD = originalEnv;
+  }
 });
 it("treatment reads shared daily cost with no monthly admission gate", async () => {
   const snapshot = await checkFreeCostBudget("quota", policy);

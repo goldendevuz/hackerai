@@ -115,6 +115,7 @@ import {
   checkFreeCostBudget,
   isHandledUserRateLimitError,
   recordFreeMonthlyCost,
+  recordFreeDailyCost,
 } from "@/lib/rate-limit";
 import { checkSubagentBillingCapacity } from "@/lib/ai/subagents/billing";
 import { FreeDailyCostSettlement } from "@/lib/rate-limit/free-cost-budget";
@@ -660,6 +661,10 @@ export const subagentTask = task({
           await freeDailySettlement.settle(costDollars);
         } else {
           await recordFreeMonthlyCost(
+            row.free_quota_subject ?? row.user_id,
+            costDollars,
+          );
+          await recordFreeDailyCost(
             row.free_quota_subject ?? row.user_id,
             costDollars,
           );

@@ -120,6 +120,7 @@ import {
   paidDailyFreeAllowanceStatusToMetadata,
   recordPaidDailyFreeAllowanceCost,
   recordFreeMonthlyCost,
+  recordFreeDailyCost,
   replaceUsageSettlementState,
   shouldSettleUsageMidRun,
   reservePaidDailyFreeAllowanceRequest,
@@ -3348,6 +3349,10 @@ export const agentLongTask = task({
                     );
                   } else {
                     await recordFreeMonthlyCost(
+                      freeUsageSubject,
+                      usageCostRecord.costDollars,
+                    );
+                    await recordFreeDailyCost(
                       freeUsageSubject,
                       usageCostRecord.costDollars,
                     );
