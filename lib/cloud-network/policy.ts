@@ -52,6 +52,10 @@ export const SOLIDER_LAB_DEFAULT_POLICY: NetworkPolicy = {
     "exploit-server.net",
     "*.exploit-server.net",
     "*.r2.cloudflarestorage.com",
+    // DoD Vulnerability Disclosure Program: authorized passive recon target.
+    "defense.gov",
+    "*.defense.gov",
+    "*.mil",
   ],
 };
 
