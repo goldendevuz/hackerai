@@ -16,6 +16,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/local/package.json ./packages/local/package.json
 COPY packages/desktop/package.json ./packages/desktop/package.json
+COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 
 # ---- build: compile with standalone output ----
