@@ -75,7 +75,7 @@ jobs:
           persist-credentials: false
 
       - name: Copy compose file to server
-        uses: appleboy/scp-action@ff85f7cb9163397ed8e62c6d61b0cd5c0c2f8d11 # v1.0.0
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
@@ -84,7 +84,7 @@ jobs:
           target: "/root/projects/hackerai"
 
       - name: Pull and restart on server
-        uses: appleboy/ssh-action@c6a3f2c7ad0a8bf4b9c5b9e8d0b3fca3a56a1c8e # v1.3.0
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
