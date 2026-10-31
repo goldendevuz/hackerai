@@ -66,6 +66,7 @@ export const SOLIDER_LAB_DEFAULT_POLICY: NetworkPolicy = {
     "*.githubusercontent.com",
     "proxy.golang.org",
     "sum.golang.org",
+    "storage.googleapis.com",
     "*.storage.googleapis.com",
   ],
 };

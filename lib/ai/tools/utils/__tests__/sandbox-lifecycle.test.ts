@@ -578,6 +578,7 @@ describe("E2B sandbox lease lifecycle", () => {
             "*.githubusercontent.com",
             "proxy.golang.org",
             "sum.golang.org",
+            "storage.googleapis.com",
             "*.storage.googleapis.com",
           ],
           denyOut: ["0.0.0.0/0"],
