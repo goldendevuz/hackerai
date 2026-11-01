@@ -34,26 +34,21 @@ export async function checkFreeCostBudget(
 ): Promise<FreeMonthlyCostSnapshot> {
   const window = policy?.agentDailyBudget;
   if (!window) {
-    const monthly = await checkFreeMonthlyCostLimit(subject, policy);
     // Solider.uz change: optional standalone FREE_DAILY_COST_LIMIT_USD cap
     // (see free-daily-cost.ts), independent of the PostHog-gated
-    // agentDailyBudget experiment above. Throws first if the daily cap is
-    // already exhausted; otherwise the tighter of the two caps' remaining
-    // budget/limit is reported so BudgetMonitor's mid-stream projection
-    // (which only understands one "monthly-shaped" snapshot) stops the
-    // stream at whichever cap binds first.
-    if (getFreeDailyCostLimitDollars() <= 0) return monthly;
-    const daily = await checkFreeDailyCostLimit(subject);
-    if (daily.dailyRemainingAtStart < monthly.monthlyRemainingAtStart) {
-      return {
-        ...monthly,
-        monthlyLimitPoints: daily.dailyLimitPoints,
-        monthlyRemainingAtStart: daily.dailyRemainingAtStart,
-        monthlyResetTime: daily.dailyResetTime,
-        capReasonOnExhaustion: "free_daily_cost_exhausted",
-      };
+    // agentDailyBudget experiment above. This is a start-of-request gate
+    // only: it throws when already exhausted (callers catch that via
+    // isDailyCostCapExhaustedError and downgrade to the free model pool
+    // instead of blocking) but is never reported to BudgetMonitor's
+    // mid-stream projection. Reporting its remaining budget there would
+    // make BudgetMonitor hard-abort a request that already started --
+    // exactly the "soft pacing" cap is not supposed to do. Only the real
+    // monthly cap (tied to this deployment's actual OpenRouter balance)
+    // governs the mid-stream snapshot.
+    if (getFreeDailyCostLimitDollars() > 0) {
+      await checkFreeDailyCostLimit(subject);
     }
-    return monthly;
+    return checkFreeMonthlyCostLimit(subject, policy);
   }
   if (Date.now() >= window.resetTimestamp)
     throw new ChatSDKError(

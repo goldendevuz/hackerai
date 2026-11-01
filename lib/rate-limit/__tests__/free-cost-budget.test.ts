@@ -66,19 +66,25 @@ it("control preserves the regional monthly budget and existing ledger", async ()
   expect(checkFreeDailyCostLimit).not.toHaveBeenCalled();
 });
 
-it("reports the standalone daily cap's remaining budget when it is tighter than the monthly cap", async () => {
+it("never reports the standalone daily cap's remaining budget to the caller, even when it is tighter than the monthly cap", async () => {
+  // Regression: an earlier version merged the daily cap's remaining budget
+  // into the returned snapshot whenever it was tighter. That snapshot flows
+  // straight into BudgetMonitor's mid-stream projection, which has no
+  // "downgrade to free" path -- it only hard-aborts. That made the daily
+  // cap interrupt an already-started run instead of only gating new ones.
   const originalEnv = process.env.FREE_DAILY_COST_LIMIT_USD;
   process.env.FREE_DAILY_COST_LIMIT_USD = "0.3";
   try {
-    jest.mocked(checkFreeMonthlyCostLimit).mockResolvedValue({
+    const monthlySnapshot = {
       monthlyLimitPoints: 2500,
       monthlyRemainingAtStart: 2000,
       monthlyResetTime: new Date("2026-11-01T00:00:00Z"),
-      extraUsageEnabledAtStart: false,
-      extraUsageHasBalanceAtStart: false,
-      extraUsageBalanceAtStart: 0,
-      extraUsageAutoReload: false,
-    });
+      extraUsageEnabledAtStart: false as const,
+      extraUsageHasBalanceAtStart: false as const,
+      extraUsageBalanceAtStart: 0 as const,
+      extraUsageAutoReload: false as const,
+    };
+    jest.mocked(checkFreeMonthlyCostLimit).mockResolvedValue(monthlySnapshot);
     jest.mocked(checkFreeDailyCostLimit).mockResolvedValue({
       dailyLimitPoints: 3000,
       dailyRemainingAtStart: 500,
@@ -90,12 +96,30 @@ it("reports the standalone daily cap's remaining budget when it is tighter than 
       monthlyCostDollars: 0.25,
     });
 
-    expect(snapshot.monthlyRemainingAtStart).toBe(500);
-    expect(snapshot.monthlyLimitPoints).toBe(3000);
-    expect(snapshot.capReasonOnExhaustion).toBe("free_daily_cost_exhausted");
-    expect(snapshot.monthlyResetTime.toISOString()).toBe(
-      "2026-10-02T00:00:00.000Z",
-    );
+    expect(snapshot).toEqual(monthlySnapshot);
+    expect(checkFreeDailyCostLimit).toHaveBeenCalledWith("quota");
+  } finally {
+    if (originalEnv === undefined) delete process.env.FREE_DAILY_COST_LIMIT_USD;
+    else process.env.FREE_DAILY_COST_LIMIT_USD = originalEnv;
+  }
+});
+
+it("propagates (as a catchable error, not a tightened snapshot) when the daily cap is already exhausted", async () => {
+  const originalEnv = process.env.FREE_DAILY_COST_LIMIT_USD;
+  process.env.FREE_DAILY_COST_LIMIT_USD = "0.3";
+  try {
+    const dailyError = new ChatSDKError("rate_limit:chat", "daily cap", {
+      capReason: "free_daily_cost_exhausted",
+    });
+    jest.mocked(checkFreeDailyCostLimit).mockRejectedValue(dailyError);
+
+    const error = await checkFreeCostBudget("quota", {
+      dailyRequests: 3,
+      monthlyCostDollars: 0.25,
+    }).catch((e) => e);
+
+    expect(isDailyCostCapExhaustedError(error)).toBe(true);
+    expect(checkFreeMonthlyCostLimit).not.toHaveBeenCalled();
   } finally {
     if (originalEnv === undefined) delete process.env.FREE_DAILY_COST_LIMIT_USD;
     else process.env.FREE_DAILY_COST_LIMIT_USD = originalEnv;
