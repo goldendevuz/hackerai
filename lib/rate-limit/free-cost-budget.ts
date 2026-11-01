@@ -17,6 +17,17 @@ const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const keyFor = (subject: string, bucket: string) =>
   `free_agent_daily_cost:${subject}:${bucket}`;
 
+/**
+ * True for the standalone FREE_DAILY_COST_LIMIT_USD cap specifically (not
+ * the real monthly cap). Callers use this to downgrade a request to the
+ * free model pool and continue instead of blocking it -- only the monthly
+ * cap, tied to this deployment's actual OpenRouter balance, should still
+ * hard-stop.
+ */
+export const isDailyCostCapExhaustedError = (error: unknown): boolean =>
+  error instanceof ChatSDKError &&
+  error.metadata?.capReason === "free_daily_cost_exhausted";
+
 export async function checkFreeCostBudget(
   subject: string,
   policy?: FreeLimitPolicy,

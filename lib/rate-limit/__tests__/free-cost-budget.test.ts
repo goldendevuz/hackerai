@@ -1,6 +1,7 @@
 import {
   checkFreeCostBudget,
   FreeDailyCostSettlement,
+  isDailyCostCapExhaustedError,
 } from "../free-cost-budget";
 import {
   checkFreeMonthlyCostLimit,
@@ -10,6 +11,7 @@ import { checkFreeDailyCostLimit } from "../free-daily-cost";
 import { createRedisClient } from "../redis";
 import type { FreeLimitPolicy } from "../free-config";
 import { isHandledUserRateLimitError } from "../error-classification";
+import { ChatSDKError } from "@/lib/errors";
 
 jest.mock("../redis");
 jest.mock("../free-monthly-cost");
@@ -37,6 +39,21 @@ beforeEach(() => {
   evalCost.mockResolvedValue(900);
 });
 afterEach(() => jest.useRealTimers());
+
+describe("isDailyCostCapExhaustedError", () => {
+  it("is true only for the free_daily_cost_exhausted ChatSDKError, not other cap reasons", () => {
+    const daily = new ChatSDKError("rate_limit:chat", "daily cap", {
+      capReason: "free_daily_cost_exhausted",
+    });
+    const monthly = new ChatSDKError("rate_limit:chat", "monthly cap", {
+      capReason: "free_monthly_exhausted",
+    });
+    expect(isDailyCostCapExhaustedError(daily)).toBe(true);
+    expect(isDailyCostCapExhaustedError(monthly)).toBe(false);
+    expect(isDailyCostCapExhaustedError(new Error("plain"))).toBe(false);
+    expect(isDailyCostCapExhaustedError(null)).toBe(false);
+  });
+});
 
 it("control preserves the regional monthly budget and existing ledger", async () => {
   const regional = { dailyRequests: 3, monthlyCostDollars: 0.1 };

@@ -114,7 +114,10 @@ export {
   type PaidDailyFreeAllowanceCostRecordResult,
 } from "./paid-daily-free-allowance";
 
-export { checkFreeCostBudget } from "./free-cost-budget";
+export {
+  checkFreeCostBudget,
+  isDailyCostCapExhaustedError,
+} from "./free-cost-budget";
 import { checkFreeCostBudget } from "./free-cost-budget";
 
 // Import for internal use

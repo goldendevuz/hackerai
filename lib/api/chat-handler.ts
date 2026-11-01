@@ -62,6 +62,7 @@ import { getBaseTodosForRequest } from "@/lib/utils/todo-utils";
 import {
   acquireFreeRunConcurrencyLock,
   checkFreeCostBudget,
+  isDailyCostCapExhaustedError,
   checkRateLimit,
   deductUsage,
   deductUsageDelta,
@@ -543,9 +544,23 @@ export const createChatHandler = () => {
             crypto.randomUUID(),
           )
         : undefined;
+      // Solider.uz change: the standalone FREE_DAILY_COST_LIMIT_USD cap
+      // (free-daily-cost.ts) downgrades to the free model pool instead of
+      // blocking the request -- only the real monthly cap (tied to this
+      // deployment's actual OpenRouter balance) still hard-stops. Applied
+      // below once `selectedModel` exists.
+      let forceFreeTierModelOnDailyCap = false;
       const freeMonthlyBudgetSnapshot =
         subscription === "free"
-          ? await checkFreeCostBudget(freeUsageSubject, freeLimits)
+          ? await checkFreeCostBudget(freeUsageSubject, freeLimits).catch(
+              (error: unknown) => {
+                if (isDailyCostCapExhaustedError(error)) {
+                  forceFreeTierModelOnDailyCap = true;
+                  return null;
+                }
+                throw error;
+              },
+            )
           : null;
 
       // Free ask: pre-flight rate-limit before any token counting/model work.
@@ -589,6 +604,13 @@ export const createChatHandler = () => {
         chatId,
         requestId,
       });
+
+      if (forceFreeTierModelOnDailyCap) {
+        // `selectedModel` is the already-resolved registry key; force it
+        // back onto the free-tier auto route now that the daily paid-spend
+        // cap is hit, instead of blocking the request.
+        selectedModel = selectModel(mode, subscription, "auto");
+      }
 
       // Empty after processing → providers reject the request before the route can stream.
       if (!processedMessages || processedMessages.length === 0) {

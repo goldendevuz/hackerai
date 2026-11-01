@@ -106,6 +106,7 @@ import { resolveTriggerRunCost } from "@/lib/billing/trigger-run-cost";
 import {
   acquireFreeRunConcurrencyLock,
   checkFreeCostBudget,
+  isDailyCostCapExhaustedError,
   checkRateLimit,
   checkRateLimitCapacity,
   isHandledUserRateLimitError,
@@ -2383,10 +2384,30 @@ export const agentLongTask = task({
               releaseFreeRunLock = lock.release;
             }
 
+            // Solider.uz change: the standalone FREE_DAILY_COST_LIMIT_USD cap
+            // (free-daily-cost.ts) downgrades to the free model pool instead
+            // of blocking the run -- only the real monthly cap (tied to this
+            // deployment's actual OpenRouter balance) still hard-stops.
+            let forceFreeTierModelOnDailyCap = false;
             const freeMonthlyBudgetSnapshot =
               subscription === "free"
-                ? await checkFreeCostBudget(freeUsageSubject, freeLimits)
+                ? await checkFreeCostBudget(freeUsageSubject, freeLimits).catch(
+                    (error: unknown) => {
+                      if (isDailyCostCapExhaustedError(error)) {
+                        forceFreeTierModelOnDailyCap = true;
+                        return null;
+                      }
+                      throw error;
+                    },
+                  )
                 : null;
+            if (forceFreeTierModelOnDailyCap) {
+              // `selectedModel` (the resolved registry key) was already
+              // computed above from the user's selectedModelOverride; force
+              // it back onto the free-tier auto route now that the daily
+              // paid-spend cap is hit.
+              selectedModel = selectModel(mode, subscription, "auto");
+            }
 
             try {
               rateLimitInfo = await checkRateLimit(
