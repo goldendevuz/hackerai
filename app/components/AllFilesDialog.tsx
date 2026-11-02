@@ -359,26 +359,42 @@ const AllFilesDialog = ({
       }
 
       // Use already fetched URLs or fetch missing ones
+      let addedCount = 0;
       await Promise.all(
         filesToDownload.map(async ({ file, index }) => {
           try {
             let url: string | null | undefined =
               downloadUrls.get(index) || file.part.url;
 
-            if (url) {
-              const response = await fetch(url);
-              const blob = await response.blob();
-              const fileName =
-                file.part.name ||
-                file.part.filename ||
-                `file-${file.partIndex}`;
-              zip.file(fileName, blob);
+            if (!url) {
+              console.error(`No download URL for ${file.part.name}`);
+              return;
             }
+
+            const response = await fetch(url);
+            if (!response.ok) {
+              throw new Error(`Request failed with ${response.status}`);
+            }
+            const blob = await response.blob();
+            const fileName =
+              file.part.name || file.part.filename || `file-${file.partIndex}`;
+            zip.file(fileName, blob);
+            addedCount += 1;
           } catch (error) {
             console.error(`Error adding ${file.part.name} to ZIP:`, error);
           }
         }),
       );
+
+      // Every file failed to fetch -- downloading a well-formed but
+      // entry-less zip would look like success while delivering nothing.
+      if (addedCount === 0) {
+        toast.error("Failed to create ZIP file", {
+          description: "None of the selected files could be downloaded.",
+        });
+        handleCancelSelection();
+        return;
+      }
 
       // Generate the ZIP file
       const zipBlob = await zip.generateAsync({ type: "blob" });
@@ -408,18 +424,24 @@ const AllFilesDialog = ({
       document.body.removeChild(link);
       URL.revokeObjectURL(blobUrl);
 
+      const skippedCount = filesToDownload.length - addedCount;
+      const skippedDescription =
+        skippedCount > 0 ? `${skippedCount} file(s) could not be added.` : "";
+
       if (isTauriEnvironment()) {
-        toast.success(`Downloaded ${filesToDownload.length} files`, {
-          description: `Saved as ${fileName}.zip to Downloads folder`,
+        toast.success(`Downloaded ${addedCount} files`, {
+          description:
+            `Saved as ${fileName}.zip to Downloads folder. ` +
+            skippedDescription,
           action: {
             label: "Show in folder",
             onClick: () => openDownloadsFolder(),
           },
         });
       } else {
-        toast.success(
-          `Downloaded ${filesToDownload.length} files as ${fileName}.zip`,
-        );
+        toast.success(`Downloaded ${addedCount} files as ${fileName}.zip`, {
+          description: skippedDescription || undefined,
+        });
       }
     } catch (error) {
       console.error("Error creating ZIP file:", error);

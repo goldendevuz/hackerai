@@ -1,11 +1,18 @@
 import "@testing-library/jest-dom";
-import { render, waitFor, act, screen } from "@testing-library/react";
+import {
+  render,
+  waitFor,
+  act,
+  screen,
+  fireEvent,
+} from "@testing-library/react";
 import { useLayoutEffect, type ReactNode } from "react";
 import {
   setMockConvexAuth,
   resetMockConvexAuth,
 } from "@/__mocks__/convex-react";
 import { useAction } from "convex/react";
+import { toast } from "sonner";
 import { FileUrlCacheProvider } from "@/app/contexts/FileUrlCacheContext";
 import { AllFilesDialog } from "../AllFilesDialog";
 
@@ -219,5 +226,90 @@ describe("AllFilesDialog", () => {
     expect(
       screen.getByRole("button", { name: "Download file" }),
     ).toBeInTheDocument();
+  });
+
+  describe("batch download", () => {
+    const originalFetch = global.fetch;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+
+    beforeEach(() => {
+      URL.createObjectURL = jest.fn(() => "blob:mock-url");
+      URL.revokeObjectURL = jest.fn();
+      (toast.success as jest.Mock).mockClear();
+      (toast.error as jest.Mock).mockClear();
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    });
+
+    const filesWithUrls = Array.from({ length: 2 }, (_, i) => ({
+      part: {
+        fileId: `file-${i}` as any,
+        name: `file-${i}.txt`,
+        mediaType: "text/plain",
+        s3Key: `uploads/${i}`,
+        url: `https://files.example/file-${i}`,
+      },
+      partIndex: i,
+      messageId: "message",
+    }));
+
+    const enterSelectionAndBatchDownload = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Download files" }));
+      const batchButton = await screen.findByRole("button", {
+        name: /Batch download/,
+      });
+      fireEvent.click(batchButton);
+    };
+
+    it("errors instead of silently downloading an empty zip when every file fetch fails", async () => {
+      // Regression: a presigned URL fetch (CORS, expired URL, ownership
+      // mismatch) failing for every selected file used to be swallowed --
+      // JSZip still produced a well-formed zero-entry zip and the download
+      // reported success, hiding the real failure from the user.
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        blob: async () => new Blob([]),
+      }) as any;
+
+      renderWithCache(filesWithUrls);
+      await enterSelectionAndBatchDownload();
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith(
+          "Failed to create ZIP file",
+          expect.objectContaining({
+            description: expect.stringContaining("None"),
+          }),
+        );
+      });
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(URL.createObjectURL).not.toHaveBeenCalled();
+    });
+
+    it("downloads a non-empty zip and reports the real added count when all fetches succeed", async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        blob: async () => new Blob(["content"]),
+      }) as any;
+
+      renderWithCache(filesWithUrls);
+      await enterSelectionAndBatchDownload();
+
+      await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith(
+          expect.stringContaining("Downloaded 2 files"),
+          expect.anything(),
+        );
+      });
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(URL.createObjectURL).toHaveBeenCalled();
+    });
   });
 });
