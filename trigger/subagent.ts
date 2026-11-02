@@ -130,6 +130,7 @@ import {
 import {
   getChatById,
   getCurrentAgentEntitlementContext,
+  getProjectById,
   getUserCustomization,
   persistAgentApprovalGrant,
 } from "@/lib/db/actions";
@@ -452,6 +453,18 @@ export const subagentTask = task({
       return await reusePersistedTerminalState(row, ctx.run.id, "pre_attach");
     }
     const costLimitDollars = row.cost_limit_dollars;
+    // Keep a project-scoped OpenRouter key's cost isolation intact inside
+    // subagent runs too -- otherwise a project-keyed parent chat would still
+    // leak subagent spend onto the shared deployment key.
+    const subagentChat = await getChatById({ id: row.chat_id });
+    const subagentProjectId =
+      typeof subagentChat?.project_id === "string"
+        ? subagentChat.project_id
+        : undefined;
+    const subagentProject = subagentProjectId
+      ? await getProjectById({ id: subagentProjectId, userId: row.user_id })
+      : null;
+    const projectOpenrouterApiKey = subagentProject?.openrouter_api_key;
     let profile!: ReturnType<typeof getSubagentProfileDefinition>;
     let permissionMode!: AgentPermissionMode;
 
@@ -1148,7 +1161,7 @@ export const subagentTask = task({
             assertSubagentSandboxIdentity(sandbox, row.sandbox_identity);
             const tools = authorizedTools;
 
-            const provider = createTrackedProvider();
+            const provider = createTrackedProvider(projectOpenrouterApiKey);
             const getGuardedLanguageModel = (
               modelName: string,
               generationAttempt: number,

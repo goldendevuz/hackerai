@@ -320,6 +320,23 @@ describe("provider registry", () => {
     ).toBe("deepseek/deepseek-v4.1-flash-1017");
   });
 
+  it("gives a project-scoped OpenRouter key its own provider, cached by key", () => {
+    const withoutKey = createTrackedProvider();
+    expect(withoutKey).toBe(myProvider);
+
+    const projectA = createTrackedProvider("sk-or-v1-project-a");
+    const projectAAgain = createTrackedProvider("sk-or-v1-project-a");
+    const projectB = createTrackedProvider("sk-or-v1-project-b");
+
+    expect(projectA).not.toBe(myProvider);
+    expect(projectA).toBe(projectAAgain);
+    expect(projectA).not.toBe(projectB);
+    expect(
+      (projectA.languageModel("ask-model-free-glm") as { modelId: string })
+        .modelId,
+    ).toBe("z-ai/glm-5.3-flash");
+  });
+
   it.each([
     "model-sonnet-4.6",
     "model-gemini-3-flash",

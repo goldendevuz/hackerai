@@ -20,7 +20,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 interface ProjectEditDialogProps {
-  project: Doc<"projects">;
+  project: Omit<Doc<"projects">, "openrouter_api_key"> & {
+    has_openrouter_api_key?: boolean;
+  };
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -38,6 +40,8 @@ export function ProjectEditDialog({
   );
   const [isPickingFolder, setIsPickingFolder] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [openrouterApiKey, setOpenrouterApiKey] = useState("");
+  const [clearOpenrouterApiKey, setClearOpenrouterApiKey] = useState(false);
   const isDesktopApp = isTauriEnvironment();
   const initialFolderPath = project.folder_path ?? null;
 
@@ -46,6 +50,8 @@ export function ProjectEditDialog({
       setName(project.name);
       setFolderPath(project.folder_path ?? null);
       setIsPickingFolder(false);
+      setOpenrouterApiKey("");
+      setClearOpenrouterApiKey(false);
     }
   }, [open, project.folder_path, project.name]);
 
@@ -70,7 +76,9 @@ export function ProjectEditDialog({
     if (!trimmedName || isSaving) return;
 
     const folderChanged = folderPath !== initialFolderPath;
-    if (trimmedName === project.name && !folderChanged) {
+    const trimmedKey = openrouterApiKey.trim();
+    const keyChanged = trimmedKey.length > 0 || clearOpenrouterApiKey;
+    if (trimmedName === project.name && !folderChanged && !keyChanged) {
       onOpenChange(false);
       return;
     }
@@ -81,6 +89,11 @@ export function ProjectEditDialog({
         projectId: project._id,
         name: trimmedName,
         ...(folderChanged ? { folderPath } : {}),
+        ...(trimmedKey.length > 0
+          ? { openrouterApiKey: trimmedKey }
+          : clearOpenrouterApiKey
+            ? { openrouterApiKey: null }
+            : {}),
       });
       toast.success("Project updated");
       onOpenChange(false);
@@ -124,6 +137,47 @@ export function ProjectEditDialog({
                 autoFocus={isMobile === false}
                 disabled={isSaving}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor={`project-openrouter-key-${project._id}`}>
+                OpenRouter API key (optional)
+              </Label>
+              <Input
+                id={`project-openrouter-key-${project._id}`}
+                name="openrouterApiKey"
+                type="password"
+                autoComplete="off"
+                placeholder={
+                  project.has_openrouter_api_key
+                    ? "Key is set — leave blank to keep it"
+                    : "sk-or-v1-... (uses the shared key if left blank)"
+                }
+                value={openrouterApiKey}
+                onChange={(event) => {
+                  setOpenrouterApiKey(event.target.value);
+                  setClearOpenrouterApiKey(false);
+                }}
+                disabled={isSaving}
+              />
+              <p className="text-xs text-muted-foreground">
+                Route this project&apos;s requests through their own key so its
+                spend never mixes with the shared account or other projects.{" "}
+                {project.has_openrouter_api_key && !clearOpenrouterApiKey ? (
+                  <button
+                    type="button"
+                    className="underline underline-offset-2"
+                    onClick={() => {
+                      setClearOpenrouterApiKey(true);
+                      setOpenrouterApiKey("");
+                    }}
+                    disabled={isSaving}
+                  >
+                    Remove key and use the shared one
+                  </button>
+                ) : null}
+                {clearOpenrouterApiKey ? "Key will be removed on save." : null}
+              </p>
             </div>
 
             {isDesktopApp || folderPath ? (

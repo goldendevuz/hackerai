@@ -218,7 +218,9 @@ describe("security validation subagent runtime contracts", () => {
     );
     const guardedSandboxSetup = child.slice(
       child.indexOf("const authorizedTools = guardSubagentToolExecutions("),
-      child.indexOf("const provider = createTrackedProvider()"),
+      child.indexOf(
+        "const provider = createTrackedProvider(projectOpenrouterApiKey)",
+      ),
     );
     expectMarkerOrder(
       guardedSandboxSetup,

@@ -240,6 +240,7 @@ export default defineSchema({
     folder_path: v.optional(v.string()),
     pinned_at: v.optional(v.number()),
     deletion_started_at: v.optional(v.number()),
+    openrouter_api_key: v.optional(v.string()),
     created_at: v.number(),
     updated_at: v.number(),
   })

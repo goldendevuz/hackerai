@@ -1608,4 +1608,35 @@ export const myProvider = customProvider({
   languageModels: baseProviders,
 });
 
-export const createTrackedProvider = () => myProvider;
+// Solider.uz change: a project can set its own OpenRouter API key (Project
+// settings) so its spend is tracked/capped separately from the shared
+// deployment key. Each distinct key gets its own OpenRouter client + provider
+// map, cached by key so repeated requests for the same project reuse one
+// instance instead of rebuilding it per call. Free-tier routing (`orFree`)
+// is intentionally not special-cased here: a project with its own key is
+// always billed to that key, so every model it offers should resolve
+// through it, not the shared free pool.
+const projectProviderCache = new Map<
+  string,
+  ReturnType<typeof customProvider>
+>();
+
+const buildProjectProvider = (apiKey: string) => {
+  const cached = projectProviderCache.get(apiKey);
+  if (cached) return cached;
+  const projectOpenrouter = createOpenRouter({
+    apiKey,
+    fetch: openrouterPatchFetch,
+    headers: openrouterAttributionHeaders,
+  });
+  const provider = customProvider({
+    languageModels: buildProviderMap(projectOpenrouter),
+  });
+  projectProviderCache.set(apiKey, provider);
+  return provider;
+};
+
+export const createTrackedProvider = (projectOpenrouterApiKey?: string) =>
+  projectOpenrouterApiKey
+    ? buildProjectProvider(projectOpenrouterApiKey)
+    : myProvider;

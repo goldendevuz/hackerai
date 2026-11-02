@@ -3126,7 +3126,9 @@ export const agentLongTask = task({
               subscription,
               shouldIncludeNotes: userCustomization?.include_notes ?? true,
             };
-            const trackedProvider = createTrackedProvider();
+            const trackedProvider = createTrackedProvider(
+              projectContext.openrouterApiKey,
+            );
             const [currentSystemPrompt, messagesWithNotes] = await Promise.all([
               systemPrompt(
                 userId,

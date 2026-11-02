@@ -16,6 +16,7 @@ type ProjectLinkedChat =
 export type ProjectExecutionContext = {
   projectId?: string;
   workingDirectory?: string;
+  openrouterApiKey?: string;
 };
 
 export async function resolveProjectExecutionContext({
@@ -63,5 +64,6 @@ export async function resolveProjectExecutionContext({
       folderPath && isDesktopPreference(sandboxPreference ?? "e2b")
         ? folderPath
         : undefined,
+    openrouterApiKey: project.openrouter_api_key,
   };
 }

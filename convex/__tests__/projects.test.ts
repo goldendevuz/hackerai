@@ -162,11 +162,57 @@ describe("projects", () => {
       }),
     ).resolves.toEqual({
       ...page,
-      page: [pinnedProject, unpinnedProject],
+      page: [
+        { ...pinnedProject, has_openrouter_api_key: false },
+        { ...unpinnedProject, has_openrouter_api_key: false },
+      ],
     });
     expect(pinnedTake).toHaveBeenCalledWith(100);
     expect(unpinnedEq).toHaveBeenCalledWith("user_id", "user-1");
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 10 });
+  });
+
+  it("never leaks a project's stored OpenRouter key to the list query's caller", async () => {
+    const keyedProject = { ...project, openrouter_api_key: "sk-or-v1-secret" };
+    const take = jest.fn<any>().mockResolvedValue([]);
+    const order = jest.fn<any>().mockReturnValue({ take });
+    const filter = jest.fn<any>().mockReturnValue({ order });
+    const gt = jest.fn<any>().mockReturnThis();
+    const eq = jest.fn<any>().mockReturnValue({ gt });
+    const pinnedWithIndex = jest.fn<any>((_name, applyIndex) => {
+      applyIndex({ eq });
+      return { filter };
+    });
+
+    const page = { page: [keyedProject], isDone: true, continueCursor: "" };
+    const paginate = jest.fn<any>().mockResolvedValue(page);
+    const unpinnedOrder = jest.fn<any>().mockReturnValue({ paginate });
+    const unpinnedFilter = jest
+      .fn<any>()
+      .mockReturnValue({ order: unpinnedOrder });
+    const unpinnedEq = jest.fn<any>().mockReturnThis();
+    const unpinnedWithIndex = jest.fn<any>((_name, applyIndex) => {
+      applyIndex({ eq: unpinnedEq });
+      return { filter: unpinnedFilter };
+    });
+    const ctx = {
+      auth: authenticated,
+      db: {
+        query: jest
+          .fn<any>()
+          .mockReturnValueOnce({ withIndex: pinnedWithIndex })
+          .mockReturnValueOnce({ withIndex: unpinnedWithIndex }),
+      },
+    };
+
+    const result = await listProjects.handler(ctx as any, {
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(result.page[0]).toEqual({
+      ...project,
+      has_openrouter_api_key: true,
+    });
+    expect(result.page[0]).not.toHaveProperty("openrouter_api_key");
   });
 
   it("updates and pins an owned project", async () => {
@@ -207,6 +253,28 @@ describe("projects", () => {
     expect(patch).toHaveBeenCalledWith("project-1", {
       name: "Renamed",
       folder_path: undefined,
+      updated_at: expect.any(Number),
+    });
+
+    await updateProject.handler(ctx as any, {
+      projectId: "project-1" as any,
+      name: "Renamed",
+      openrouterApiKey: "  sk-or-v1-project-key  ",
+    });
+    expect(patch).toHaveBeenCalledWith("project-1", {
+      name: "Renamed",
+      openrouter_api_key: "sk-or-v1-project-key",
+      updated_at: expect.any(Number),
+    });
+
+    await updateProject.handler(ctx as any, {
+      projectId: "project-1" as any,
+      name: "Renamed",
+      openrouterApiKey: null,
+    });
+    expect(patch).toHaveBeenCalledWith("project-1", {
+      name: "Renamed",
+      openrouter_api_key: undefined,
       updated_at: expect.any(Number),
     });
 

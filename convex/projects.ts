@@ -14,6 +14,7 @@ import { resolveBranchedFromTitle } from "./lib/branchedChatTitle";
 
 const MAX_PROJECT_NAME_LENGTH = 80;
 const MAX_FOLDER_PATH_LENGTH = 4096;
+const MAX_OPENROUTER_API_KEY_LENGTH = 200;
 const MAX_PROJECTS_PER_USER = 100;
 const PROJECT_TASK_DETACH_BATCH_SIZE = 50;
 
@@ -54,6 +55,22 @@ const normalizeFolderPath = (value?: string): string | undefined => {
     });
   }
   return folderPath;
+};
+
+const normalizeOpenRouterApiKey = (value?: string): string | undefined => {
+  if (value === undefined) return undefined;
+  const key = value.trim();
+  if (!key) return undefined;
+  if (
+    /[\u0000-\u001f\u007f]/.test(key) ||
+    key.length > MAX_OPENROUTER_API_KEY_LENGTH
+  ) {
+    throw new ConvexError({
+      code: "VALIDATION_ERROR",
+      message: "Invalid OpenRouter API key",
+    });
+  }
+  return key;
 };
 
 const getOwnedProject = async (
@@ -154,6 +171,17 @@ export const createProject = mutation({
   },
 });
 
+// Never send the plaintext OpenRouter key to the browser on every sidebar
+// load -- it would sit in React state/devtools indefinitely. Replace it with
+// a presence flag; ProjectEditDialog only ever writes a new key, never reads
+// the stored one back.
+const maskProjectSecrets = <T extends { openrouter_api_key?: string }>(
+  project: T,
+) => {
+  const { openrouter_api_key, ...rest } = project;
+  return { ...rest, has_openrouter_api_key: Boolean(openrouter_api_key) };
+};
+
 export const listProjects = query({
   args: { paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
@@ -190,7 +218,10 @@ export const listProjects = query({
 
     return {
       ...result,
-      page: isFirstPage ? [...pinnedProjects, ...result.page] : result.page,
+      page: (isFirstPage
+        ? [...pinnedProjects, ...result.page]
+        : result.page
+      ).map(maskProjectSecrets),
     };
   },
 });
@@ -200,6 +231,7 @@ export const updateProject = mutation({
     projectId: v.id("projects"),
     name: v.string(),
     folderPath: v.optional(v.union(v.string(), v.null())),
+    openrouterApiKey: v.optional(v.union(v.string(), v.null())),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -217,6 +249,7 @@ export const updateProject = mutation({
       name: string;
       updated_at: number;
       folder_path?: string;
+      openrouter_api_key?: string;
     } = {
       name: normalizeProjectName(args.name),
       updated_at: Date.now(),
@@ -226,6 +259,12 @@ export const updateProject = mutation({
         args.folderPath === null
           ? undefined
           : normalizeFolderPath(args.folderPath);
+    }
+    if (args.openrouterApiKey !== undefined) {
+      updates.openrouter_api_key =
+        args.openrouterApiKey === null
+          ? undefined
+          : normalizeOpenRouterApiKey(args.openrouterApiKey);
     }
 
     await ctx.db.patch(args.projectId, updates);

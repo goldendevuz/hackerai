@@ -1169,7 +1169,9 @@ export const createChatHandler = () => {
                 )
               : Promise.resolve(undefined);
 
-            const trackedProvider = createTrackedProvider();
+            const trackedProvider = createTrackedProvider(
+              projectContext.openrouterApiKey,
+            );
 
             let currentSystemPrompt = await systemPrompt(
               userId,
