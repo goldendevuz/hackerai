@@ -163,6 +163,20 @@ export class BackgroundProcessTracker {
       }
     }
 
+    // Pattern 6: archive creation (zip/tar/7z/rar). These pass the archive
+    // path as a bare positional argument, not a flagged one -- none of the
+    // patterns above see it, so a background `zip -r out.zip dir/` was never
+    // tracked and a `get_terminal_files` call right after could upload a
+    // zero-byte or half-written archive with no warning. Match by the
+    // archive's own file extension rather than trying to parse every tool's
+    // argument grammar; matching a stray mention too eagerly only costs a
+    // retry, while missing a real one silently delivers a broken file.
+    const archiveExtensionPattern =
+      /([^\s"']+\.(?:tar\.gz|tar\.bz2|tgz|tbz2|zip|tar|7z|rar))\b/gi;
+    while ((match = archiveExtensionPattern.exec(command)) !== null) {
+      outputFiles.push(match[1]);
+    }
+
     return [...new Set(outputFiles)];
   }
 
