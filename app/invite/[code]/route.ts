@@ -1,3 +1,4 @@
+import { publicUrl } from "@/lib/auth/public-url";
 import { NextRequest, NextResponse } from "next/server";
 import {
   REFERRAL_COOKIE_CREATED_AT_NAME,
@@ -20,7 +21,7 @@ type RouteContext = {
 export async function GET(request: NextRequest, { params }: RouteContext) {
   const { code: rawCode } = await params;
   const referralCode = rawCode ?? "";
-  const redirectUrl = new URL("/signup", request.url);
+  const redirectUrl = publicUrl("/signup", request);
   if (referralCode) {
     redirectUrl.searchParams.set("referral_code", referralCode);
   }

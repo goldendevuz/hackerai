@@ -79,7 +79,7 @@ const nextConfig: NextConfig = {
     // rejected and the client spins forever on "Connecting...".
     ...(process.env.DOCKER_BUILD === "true" && {
       serverActions: {
-        allowedOrigins: ["solider.univel.uz"],
+        allowedOrigins: ["solider.univel.uz", "solider.uz"],
       },
     }),
   },
