@@ -1,3 +1,7 @@
+import {
+  findProtectedHost,
+  PROTECTED_DOMAIN_ERROR,
+} from "@/lib/security/protected-domains";
 import { withTerminalCallTiming } from "./utils/terminal-call-timing";
 import { tool } from "ai";
 import type { AnySandbox, ToolContext } from "@/types";
@@ -326,6 +330,8 @@ export const createInteractTerminalSession = (context: ToolContext) => {
             'action=send requires `input`. To submit just Enter (e.g. to terminate a Python multi-line block or accept a default prompt), pass input="Enter" or input="\\n".',
           );
         }
+        if (findProtectedHost(input))
+          return errorResult(PROTECTED_DOMAIN_ERROR);
         const lookup = getSessionOrError("send", sessionId);
         if ("error" in lookup) return lookup.error;
         const { session } = lookup;

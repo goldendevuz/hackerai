@@ -1,3 +1,7 @@
+import {
+  findProtectedHost,
+  PROTECTED_DOMAIN_ERROR,
+} from "@/lib/security/protected-domains";
 import { tool } from "ai";
 import { phLogger } from "@/lib/posthog/server";
 import { truncateContent } from "@/lib/token-utils";
@@ -118,6 +122,8 @@ export const createOpenUrlTool = (context?: OpenUrlLogContext) => {
     }).inputSchema,
     execute: async ({ url }: OpenUrlToolInput, { abortSignal }) => {
       const startedAt = Date.now();
+
+      if (findProtectedHost(url)) return `Error: ${PROTECTED_DOMAIN_ERROR}`;
 
       try {
         // Construct the Jina AI reader URL with proper encoding
