@@ -23,4 +23,17 @@ describe("AuthKit callback", () => {
       onError: expect.any(Function),
     });
   });
+
+  it("passes the public base URL so login does not redirect to the container's 0.0.0.0 origin", async () => {
+    process.env.NEXT_PUBLIC_BASE_URL = "https://solider.uz";
+    mockHandleAuth.mockClear();
+    await jest.isolateModulesAsync(async () => {
+      await import("../route");
+    });
+    delete process.env.NEXT_PUBLIC_BASE_URL;
+
+    expect(mockHandleAuth.mock.calls[0]?.[0]).toMatchObject({
+      baseURL: "https://solider.uz",
+    });
+  });
 });
