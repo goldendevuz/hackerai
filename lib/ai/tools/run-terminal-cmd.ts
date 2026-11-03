@@ -1,5 +1,9 @@
 import { withTerminalCallTiming } from "./utils/terminal-call-timing";
 import { trackForegroundCommand } from "./utils/foreground-commands";
+import {
+  findProtectedHost,
+  PROTECTED_DOMAIN_ERROR,
+} from "@/lib/security/protected-domains";
 import { tool, type Tool } from "ai";
 import { CommandExitError } from "@e2b/code-interpreter";
 import { randomUUID } from "crypto";
@@ -301,6 +305,12 @@ export const createRunTerminalCmd = (context: ToolContext) => {
       }: RunTerminalCmdInput,
       { toolCallId, abortSignal },
     ) => {
+      if (findProtectedHost(command)) {
+        return {
+          result: { output: "", exitCode: 1, error: PROTECTED_DOMAIN_ERROR },
+        };
+      }
+
       // PTY geometry is fixed server-side (DEFAULT_PTY_COLS / DEFAULT_PTY_ROWS).
       // The model intentionally has no knob for this — a terminal size should
       // match a real display, not a model-chosen value. UIs that render the

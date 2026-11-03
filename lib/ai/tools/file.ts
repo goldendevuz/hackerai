@@ -1,3 +1,7 @@
+import {
+  findProtectedHost,
+  PROTECTED_DOMAIN_ERROR,
+} from "@/lib/security/protected-domains";
 import { tool } from "ai";
 import { createHash } from "crypto";
 import type {
@@ -1341,6 +1345,11 @@ export const createFile = (context: ToolContext) => {
           const serializedEdits = edits ? JSON.stringify(edits) : undefined;
           const exactContent =
             action === "edit" ? serializedEdits : (text ?? undefined);
+          // A script written here and run later never repeats its target in
+          // the terminal command, so the terminal guard alone would miss it.
+          if (exactContent && findProtectedHost(exactContent)) {
+            return { error: PROTECTED_DOMAIN_ERROR };
+          }
           const autoReviewContentComplete =
             exactContent !== undefined &&
             exactContent.length <= MAX_AUTO_REVIEW_FILE_CHANGE_CHARS;

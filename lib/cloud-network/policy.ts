@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { allowEntryCoversProtectedHost } from "@/lib/security/protected-domains";
 
 export const networkPolicySchema = z
   .object({
@@ -125,6 +126,10 @@ export function normalizeNetworkPolicy(input: unknown): NetworkPolicy {
         const host = networkHost(value);
         if (host.includes(":") || host.startsWith("["))
           throw new Error("IPv6 is not supported by this setting.");
+        if (allowEntryCoversProtectedHost(host))
+          throw new Error(
+            "This destination belongs to the HackerAI operator and cannot be allowed.",
+          );
         return host;
       }),
     ),
