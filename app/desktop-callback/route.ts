@@ -1,3 +1,4 @@
+import { publicUrl } from "@/lib/auth/public-url";
 import { NextResponse } from "next/server";
 import { exchangeDesktopTransferToken } from "@/lib/desktop-auth";
 
@@ -178,7 +179,7 @@ export async function GET(request: Request) {
   const redirectPath = isValidLocalPath(sessionData.returnPath)
     ? sessionData.returnPath
     : "/";
-  const response = NextResponse.redirect(new URL(redirectPath, request.url));
+  const response = NextResponse.redirect(publicUrl(redirectPath, request));
 
   response.cookies.set("wos-session", sessionData.sealedSession, {
     httpOnly: true,

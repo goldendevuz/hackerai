@@ -1,3 +1,4 @@
+import { publicUrl } from "@/lib/auth/public-url";
 import { randomUUID } from "node:crypto";
 import { flushInfluencerAnalytics } from "@/lib/influencers/analytics";
 import { after, NextRequest, NextResponse } from "next/server";
@@ -38,7 +39,7 @@ export async function GET(
     req.headers.get("user-agent") ?? "",
   );
   const allowed = partnerTrackingAllowed(req) && !isBot;
-  const destination = new URL("/", req.url);
+  const destination = publicUrl("/", req);
   if (
     !allowed &&
     !isBot &&

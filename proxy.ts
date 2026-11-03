@@ -1,3 +1,4 @@
+import { publicUrl } from "@/lib/auth/public-url";
 import { authkit } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextRequest } from "next/server";
 import { isRateLimitError } from "@/lib/api/response";
@@ -279,8 +280,8 @@ function buildEndedSessionResponse(
   }
 
   const redirectUrl = isDesktopApp(request)
-    ? new URL("/desktop-callback?error=unauthenticated", request.url)
-    : new URL("/login", request.url);
+    ? publicUrl("/desktop-callback?error=unauthenticated", request)
+    : publicUrl("/login", request);
 
   return withSessionCookieCleared(
     withAttributionCookies(request, NextResponse.redirect(redirectUrl)),
@@ -345,7 +346,7 @@ export default async function proxy(request: NextRequest) {
       return withAttributionCookies(
         request,
         NextResponse.redirect(
-          new URL("/desktop-callback?error=unauthenticated", request.url),
+          publicUrl("/desktop-callback?error=unauthenticated", request),
         ),
       );
     }
@@ -534,7 +535,7 @@ export default async function proxy(request: NextRequest) {
       pathname,
       hasSession: !!session.user,
     });
-    const errorUrl = new URL("/auth-error", request.url);
+    const errorUrl = publicUrl("/auth-error", request);
     errorUrl.searchParams.set("code", "503");
     return withAttributionCookies(
       request,

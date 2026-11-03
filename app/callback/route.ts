@@ -1,3 +1,4 @@
+import { publicUrl } from "@/lib/auth/public-url";
 import { handleAuth } from "@workos-inc/authkit-nextjs";
 import {
   getRecoverableAuthkitCallbackErrorBucket,
@@ -61,7 +62,7 @@ const buildRecoveryResponse = async (
       ...logPayload,
       event: "auth.callback_failed",
     });
-    return NextResponse.redirect(new URL("/auth-error?code=500", request.url));
+    return NextResponse.redirect(publicUrl("/auth-error?code=500", request));
   }
 
   if (bucket === "missing_auth_parameter") {
@@ -75,7 +76,7 @@ const buildRecoveryResponse = async (
   // one-click recovery via /login.
   if (bucket === "verifier_missing" && hasVerifierCookie) {
     return NextResponse.redirect(
-      new URL("/auth-error?code=400&reason=verifier_invalid", request.url),
+      publicUrl("/auth-error?code=400&reason=verifier_invalid", request),
     );
   }
 
@@ -83,7 +84,7 @@ const buildRecoveryResponse = async (
   // cross-device link, embedded webview, missing cookie, duplicate callback,
   // expired sign-in session): one-click recovery.
   // Preserve post_login_redirect intent so the retry lands where they wanted.
-  const loginUrl = new URL("/login", request.url);
+  const loginUrl = publicUrl("/login", request);
   const loginResponse = NextResponse.redirect(loginUrl);
   if (redirectPath && isValidLocalPath(redirectPath)) {
     loginResponse.cookies.set("post_login_redirect", redirectPath, {
@@ -145,7 +146,7 @@ export async function GET(request: NextRequest) {
     if (isValidLocalPath(redirectPath)) {
       response.headers.set(
         "location",
-        new URL(redirectPath, request.url).toString(),
+        publicUrl(redirectPath, request).toString(),
       );
     }
     return response;
@@ -153,7 +154,7 @@ export async function GET(request: NextRequest) {
 
   if (response.status >= 400) {
     return NextResponse.redirect(
-      new URL(`/auth-error?code=${response.status}`, request.url),
+      publicUrl(`/auth-error?code=${response.status}`, request),
     );
   }
 
