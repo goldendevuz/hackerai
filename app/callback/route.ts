@@ -99,6 +99,9 @@ const buildRecoveryResponse = async (
 };
 
 const authHandler = handleAuth({
+  // In the container request.nextUrl is 0.0.0.0:3000, so AuthKit would send the
+  // user there after login. Without a base URL (local dev) it uses the request.
+  baseURL: process.env.NEXT_PUBLIC_BASE_URL || undefined,
   onError: async ({ error, request }) => {
     return buildRecoveryResponse(request as NextRequest, error);
   },
