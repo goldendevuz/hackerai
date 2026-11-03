@@ -11,6 +11,7 @@ import {
   Copy,
   Download,
   FileDown,
+  Send,
   LockKeyhole,
   MessageSquareText,
   ShieldAlert,
@@ -34,6 +35,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { MemoizedMarkdown } from "@/app/components/MemoizedMarkdown";
 import { FINDING_CATEGORY_LABELS } from "@/lib/findings/category";
@@ -241,6 +243,9 @@ export function FindingDetail({
   };
   const closeFinding = useMutation(api.findings.closeFinding);
   const [isCloseDialogOpen, setIsCloseDialogOpen] = useState(false);
+  const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareEmail, setShareEmail] = useState("");
   const [isClosing, setIsClosing] = useState(false);
   const [closureReason, setClosureReason] =
     useState<FindingClosureReason>("already_fixed");
@@ -404,6 +409,74 @@ export function FindingDetail({
     });
   };
 
+  const handleShareFinding = async () => {
+    const email = shareEmail.trim();
+    if (!email) return;
+    setIsSharing(true);
+    try {
+      const response = await fetch(
+        `/api/findings/${encodeURIComponent(finding.finding_id)}/share`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        },
+      );
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        already_shared?: boolean;
+      };
+      if (response.ok) {
+        captureFindingEvent({
+          operation: "share",
+          outcome: "success",
+          finding_id: finding.finding_id,
+        });
+        setIsShareDialogOpen(false);
+        setShareEmail("");
+        toast.success(
+          body.already_shared
+            ? "This user already has a copy."
+            : "Copy sent. It now appears in their Findings.",
+        );
+        return;
+      }
+      const reasons = {
+        user_not_found: "user_not_found",
+        self_share: "self_share",
+        recipient_unavailable: "recipient_unavailable",
+        not_found: "not_found",
+      } as const;
+      const reason =
+        reasons[body.error as keyof typeof reasons] ?? ("general" as const);
+      captureFindingEvent({
+        operation: "share",
+        outcome: "rejected",
+        finding_id: finding.finding_id,
+        reason,
+      });
+      toast.error(
+        {
+          user_not_found: "No HackerAI account uses this email.",
+          self_share: "This finding is already yours.",
+          recipient_unavailable: "This user can't receive findings right now.",
+          not_found: "This finding no longer exists.",
+          general: "Could not share the finding. Try again.",
+        }[reason],
+      );
+    } catch {
+      captureFindingEvent({
+        operation: "share",
+        outcome: "uncertain",
+        finding_id: finding.finding_id,
+        reason: "general",
+      });
+      toast.error("Could not share the finding. Try again.");
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   const handleCloseFinding = async () => {
     if (!closureContext.trim()) return;
     setIsClosing(true);
@@ -503,25 +576,38 @@ export function FindingDetail({
 
             {surface === "findings_page" ? (
               <div className="flex min-w-0 shrink-0 flex-col gap-2 @min-[520px]:flex-row @min-[760px]:max-w-sm @min-[760px]:flex-wrap @min-[760px]:justify-end">
-                <Button asChild variant="outline" size="sm">
-                  <Link
-                    href={getSourceMessageHref(
-                      finding.chat_id,
-                      finding.message_id,
-                    )}
-                    onClick={() =>
-                      captureFindingEvent({
-                        operation: "source",
-                        outcome: "initiated",
-                        finding_id: finding.finding_id,
-                        surface,
-                      })
-                    }
-                    aria-label={`Open source message in ${finding.chat_title}`}
-                  >
-                    <MessageSquareText className="size-4" aria-hidden="true" />
-                    Open Source Message
-                  </Link>
+                {finding.shared_from ? null : (
+                  <Button asChild variant="outline" size="sm">
+                    <Link
+                      href={getSourceMessageHref(
+                        finding.chat_id,
+                        finding.message_id,
+                      )}
+                      onClick={() =>
+                        captureFindingEvent({
+                          operation: "source",
+                          outcome: "initiated",
+                          finding_id: finding.finding_id,
+                          surface,
+                        })
+                      }
+                      aria-label={`Open source message in ${finding.chat_title}`}
+                    >
+                      <MessageSquareText
+                        className="size-4"
+                        aria-hidden="true"
+                      />
+                      Open Source Message
+                    </Link>
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsShareDialogOpen(true)}
+                >
+                  <Send className="size-4" aria-hidden="true" />
+                  Share copy
                 </Button>
                 {finding.status === "active" ? (
                   <Button
@@ -534,7 +620,9 @@ export function FindingDetail({
                   </Button>
                 ) : null}
                 <span className="min-w-0 truncate text-xs text-muted-foreground @min-[520px]:w-full @min-[760px]:text-right">
-                  From {finding.chat_title}
+                  {finding.shared_from
+                    ? `Shared by ${finding.shared_from.sender_name ?? "another user"}`
+                    : `From ${finding.chat_title}`}
                 </span>
               </div>
             ) : null}
@@ -1089,6 +1177,63 @@ export function FindingDetail({
           </div>
         </div>
       </article>
+
+      {surface === "findings_page" ? (
+        <Dialog
+          open={isShareDialogOpen}
+          onOpenChange={(open) => {
+            if (!isSharing) setIsShareDialogOpen(open);
+          }}
+        >
+          <DialogContent
+            showCloseButton={!isSharing}
+            overlayClassName="bg-black/60 backdrop-blur-sm"
+            className="p-4 sm:max-w-md sm:p-6"
+          >
+            <form
+              className="space-y-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleShareFinding();
+              }}
+            >
+              <DialogHeader className="pr-8 text-left">
+                <DialogTitle>Share a copy</DialogTitle>
+                <DialogDescription>
+                  Send this report to another HackerAI user. They get their own
+                  copy to keep or delete; your finding, chat and files stay
+                  private and unchanged. Only existing accounts can receive it.
+                </DialogDescription>
+              </DialogHeader>
+              <Input
+                type="email"
+                autoComplete="off"
+                placeholder="their-account@example.com"
+                aria-label="Recipient email"
+                value={shareEmail}
+                disabled={isSharing}
+                onChange={(event) => setShareEmail(event.target.value)}
+              />
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isSharing}
+                  onClick={() => setIsShareDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSharing || !shareEmail.trim()}
+                >
+                  {isSharing ? "Sending…" : "Send copy"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      ) : null}
 
       {surface === "findings_page" ? (
         <Dialog

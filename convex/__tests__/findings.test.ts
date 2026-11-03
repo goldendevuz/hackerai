@@ -24,6 +24,7 @@ jest.mock("../lib/utils", () => ({
 
 jest.mock("../lib/suspensionGuards", () => ({
   assertUserCanAccessChatHistory: jest.fn().mockResolvedValue(undefined),
+  isUserBlockedFromChatHistory: jest.fn().mockResolvedValue(false),
 }));
 
 type Row = { _id: string; [key: string]: any };
@@ -1435,5 +1436,113 @@ describe("semantic finding deduplication", () => {
       ),
     ).toMatchObject({ success: true });
     expect(tables.findings).toHaveLength(2);
+  });
+});
+
+describe("sharing a finding copy", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const seedOwned = async () => {
+    const { createFindingForBackend } = await import("../findings");
+    const tables = seedTables();
+    const { ctx } = createMockCtx(tables);
+    await createFindingForBackend.handler(
+      ctx,
+      createArgs({
+        evidenceVerification: {
+          checked_refs: ["file-secret"],
+          unavailable_refs: [],
+        },
+      }),
+    );
+    return { tables, ctx, sourceId: tables.findings[0].finding_id as string };
+  };
+
+  const shareArgs = (sourceId: string, overrides = {}) => ({
+    serviceKey: "service-key",
+    senderUserId: "user-1",
+    recipientUserId: "user-2",
+    findingId: sourceId,
+    senderName: "Ada Lovelace",
+    ...overrides,
+  });
+
+  it("gives the recipient an independent copy without the sender's chat, evidence refs or state", async () => {
+    const { shareFindingCopyForBackend, getFinding, listFindings } =
+      await import("../findings");
+    const { tables, ctx, sourceId } = await seedOwned();
+    tables.findings[0].evidence_refs = ["file-secret"];
+    tables.findings[0].status = "closed";
+    tables.findings[0].closure_reason = "wont_fix";
+
+    expect(
+      await shareFindingCopyForBackend.handler(ctx, shareArgs(sourceId)),
+    ).toEqual({ success: true, already_shared: false });
+
+    const copy = tables.findings.find((row) => row.user_id === "user-2")!;
+    expect(copy.finding_id).not.toBe(sourceId);
+    expect(copy).toMatchObject({
+      title: tables.findings[0].title,
+      status: "active",
+      message_id: "",
+      shared_from: { finding_id: sourceId, sender_name: "Ada Lovelace" },
+    });
+    expect(copy.chat_id).not.toBe("chat-1");
+    expect(copy.evidence_refs).toBeUndefined();
+    expect(copy.evidence_verification).toBeUndefined();
+    expect(copy.closure_reason).toBeUndefined();
+    expect(tables.finding_sources.some((row) => row.user_id === "user-2")).toBe(
+      false,
+    );
+
+    const recipient = createMockCtx(tables, "user-2").ctx;
+    expect(
+      await getFinding.handler(recipient, { findingId: copy.finding_id }),
+    ).toMatchObject({ shared_from: { sender_name: "Ada Lovelace" } });
+    const listed = await listFindings.handler(recipient, {
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    expect(listed.page).toHaveLength(1);
+    // The sender never sees the recipient's copy, and vice versa.
+    expect(
+      await getFinding.handler(ctx, { findingId: copy.finding_id }),
+    ).toBeNull();
+  });
+
+  it("does not create a second copy on retry", async () => {
+    const { shareFindingCopyForBackend } = await import("../findings");
+    const { tables, ctx, sourceId } = await seedOwned();
+
+    await shareFindingCopyForBackend.handler(ctx, shareArgs(sourceId));
+    expect(
+      await shareFindingCopyForBackend.handler(ctx, shareArgs(sourceId)),
+    ).toEqual({ success: true, already_shared: true });
+    expect(
+      tables.findings.filter((row) => row.user_id === "user-2"),
+    ).toHaveLength(1);
+  });
+
+  it("refuses a finding the sender does not own, self-shares and deleting recipients", async () => {
+    const { shareFindingCopyForBackend } = await import("../findings");
+    const { tables, ctx, sourceId } = await seedOwned();
+
+    expect(
+      await shareFindingCopyForBackend.handler(
+        ctx,
+        shareArgs(sourceId, { senderUserId: "intruder" }),
+      ),
+    ).toEqual({ success: false, error: "not_found" });
+    expect(
+      await shareFindingCopyForBackend.handler(
+        ctx,
+        shareArgs(sourceId, { recipientUserId: "user-1" }),
+      ),
+    ).toEqual({ success: false, error: "self_share" });
+
+    tables.user_deletion_fences = [{ _id: "fence-1", user_id: "user-2" }];
+    expect(
+      await shareFindingCopyForBackend.handler(ctx, shareArgs(sourceId)),
+    ).toEqual({ success: false, error: "recipient_unavailable" });
+    expect(tables.findings).toHaveLength(1);
   });
 });

@@ -540,6 +540,15 @@ export default defineSchema({
     closure_reason: v.optional(findingClosureReasonValidator),
     closure_context: v.optional(v.string()),
     closed_at: v.optional(v.number()),
+    // Set only on a copy the owner pushed to another user. chat_id is then a
+    // `shared:<source finding_id>` sentinel with no chat, message or source row.
+    shared_from: v.optional(
+      v.object({
+        finding_id: v.string(),
+        shared_at: v.number(),
+        sender_name: v.optional(v.string()),
+      }),
+    ),
     created_at: v.number(),
     updated_at: v.number(),
   })
