@@ -15,7 +15,10 @@ import type { QueryCtx } from "./lib/serviceFunctions";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { validateServiceKey } from "./lib/utils";
-import { assertUserCanAccessChatHistory } from "./lib/suspensionGuards";
+import {
+  assertUserCanAccessChatHistory,
+  isUserBlockedFromChatHistory,
+} from "./lib/suspensionGuards";
 import { calculateCvss31 } from "../lib/findings/cvss31";
 import {
   updateVulnerabilityReportInputSchema,
@@ -262,6 +265,16 @@ const toFindingSummary = (finding: Doc<"findings">, chatTitle: string) => {
     status: finding.status ?? ("active" as const),
     chat_id: finding.chat_id,
     chat_title: chatTitle,
+    ...(finding.shared_from
+      ? {
+          shared_from: {
+            shared_at: finding.shared_from.shared_at,
+            ...(finding.shared_from.sender_name
+              ? { sender_name: finding.shared_from.sender_name }
+              : {}),
+          },
+        }
+      : {}),
     created_at: finding.created_at,
   };
 };
@@ -616,6 +629,131 @@ export const createFindingForBackend = mutation({
       severity: cvss.severity,
       cvss_score: cvss.score,
     };
+  },
+});
+
+export const shareFindingCopyForBackend = mutation({
+  args: {
+    serviceKey: v.string(),
+    senderUserId: v.string(),
+    recipientUserId: v.string(),
+    findingId: v.string(),
+    senderName: v.optional(v.string()),
+  },
+  returns: v.union(
+    v.object({ success: v.literal(true), already_shared: v.boolean() }),
+    v.object({
+      success: v.literal(false),
+      error: v.union(
+        v.literal("not_found"),
+        v.literal("self_share"),
+        v.literal("recipient_unavailable"),
+      ),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    validateServiceKey(args.serviceKey);
+
+    if (args.senderUserId === args.recipientUserId) {
+      return { success: false as const, error: "self_share" as const };
+    }
+
+    const source = await getFindingByPublicId(ctx, args.findingId);
+    if (!source || source.user_id !== args.senderUserId) {
+      return { success: false as const, error: "not_found" as const };
+    }
+    await assertUserCanAccessChatHistory(ctx, args.senderUserId);
+
+    const fence = await ctx.db
+      .query("user_deletion_fences")
+      .withIndex("by_user_id", (q) => q.eq("user_id", args.recipientUserId))
+      .first();
+    if (
+      fence ||
+      (await isUserBlockedFromChatHistory(ctx, args.recipientUserId))
+    ) {
+      return {
+        success: false as const,
+        error: "recipient_unavailable" as const,
+      };
+    }
+
+    // One copy per (finding, recipient): a retry or double click must not
+    // flood the recipient's list.
+    const sharedKey = `shared:${source.finding_id}`;
+    const existing = await ctx.db
+      .query("findings")
+      .withIndex("by_user_chat_dedupe", (q) =>
+        q
+          .eq("user_id", args.recipientUserId)
+          .eq("chat_id", sharedKey)
+          .eq("dedupe_key", sharedKey),
+      )
+      .first();
+    if (existing) {
+      return { success: true as const, already_shared: true };
+    }
+
+    const now = Date.now();
+    // Copy the report content only. Source chat/message ids, evidence file
+    // references, feedback, correction history and closure state belong to the
+    // sender's workflow and must not reach the recipient.
+    await ctx.db.insert("findings", {
+      finding_id: crypto.randomUUID(),
+      user_id: args.recipientUserId,
+      chat_id: sharedKey,
+      message_id: "",
+      tool_call_id: "",
+      title: source.title,
+      description: source.description,
+      impact: source.impact,
+      target: source.target,
+      technical_analysis: source.technical_analysis,
+      poc_description: source.poc_description,
+      poc_script_code: source.poc_script_code,
+      remediation_steps: source.remediation_steps,
+      evidence: source.evidence,
+      assumptions: source.assumptions,
+      ...(source.confidence ? { confidence: source.confidence } : {}),
+      ...(source.confidence_rationale
+        ? { confidence_rationale: source.confidence_rationale }
+        : {}),
+      ...(source.counterevidence
+        ? { counterevidence: source.counterevidence }
+        : {}),
+      ...(source.severity_change_conditions
+        ? { severity_change_conditions: source.severity_change_conditions }
+        : {}),
+      fix_effort: source.fix_effort,
+      cvss_breakdown: source.cvss_breakdown,
+      cvss_score: source.cvss_score,
+      cvss_vector: source.cvss_vector,
+      severity: source.severity,
+      category:
+        source.category ??
+        deriveFindingCategory({ cwe: source.cwe, title: source.title }),
+      status: "active",
+      ...(source.endpoint ? { endpoint: source.endpoint } : {}),
+      ...(source.method ? { method: source.method } : {}),
+      ...(source.cve ? { cve: source.cve } : {}),
+      ...(source.cwe ? { cwe: source.cwe } : {}),
+      ...(source.code_locations
+        ? { code_locations: source.code_locations }
+        : {}),
+      dedupe_key: sharedKey,
+      search_text: source.search_text,
+      shared_from: {
+        finding_id: source.finding_id,
+        shared_at: now,
+        ...(args.senderName
+          ? { sender_name: args.senderName.slice(0, 100) }
+          : {}),
+      },
+      created_at: now,
+      updated_at: now,
+    });
+
+    return { success: true as const, already_shared: false };
   },
 });
 

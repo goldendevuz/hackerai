@@ -9,7 +9,8 @@ export type FindingOperation =
   | "export"
   | "feedback"
   | "search"
-  | "source";
+  | "source"
+  | "share";
 export type FindingOutcome =
   "success" | "rejected" | "failed" | "canceled" | "uncertain" | "initiated";
 export interface FindingEvent {
@@ -24,7 +25,10 @@ export interface FindingEvent {
     | "not_found"
     | "chat_not_found"
     | "general"
-    | "unsupported_native";
+    | "unsupported_native"
+    | "user_not_found"
+    | "self_share"
+    | "recipient_unavailable";
   finding_id?: string;
   report_updated_at?: number;
   duration_ms?: number;

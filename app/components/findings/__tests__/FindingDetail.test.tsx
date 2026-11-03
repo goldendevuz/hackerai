@@ -325,6 +325,71 @@ describe("FindingDetail", () => {
     expect(screen.queryByRole("button", { name: "Close Finding" })).toBeNull();
   });
 
+  it("sends a copy to an existing user and explains an unknown email", async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = jest.fn<any>();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ error: "user_not_found" }),
+      } as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true, already_shared: false }),
+      } as any);
+    const errorToast = jest.spyOn(toast, "error");
+    const successToast = jest.spyOn(toast, "success");
+    render(<FindingDetail finding={finding} surface="findings_page" />);
+    fireEvent.click(screen.getByRole("button", { name: "Share copy" }));
+    fireEvent.change(screen.getByLabelText("Recipient email"), {
+      target: { value: "ghost@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send copy" }));
+    await waitFor(() =>
+      expect(errorToast).toHaveBeenCalledWith(
+        "No HackerAI account uses this email.",
+      ),
+    );
+    // The dialog stays open so the email can be corrected.
+    fireEvent.change(screen.getByLabelText("Recipient email"), {
+      target: { value: "real@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send copy" }));
+    await waitFor(() =>
+      expect(successToast).toHaveBeenCalledWith(
+        "Copy sent. It now appears in their Findings.",
+      ),
+    );
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/findings/${finding.finding_id}/share`,
+      expect.objectContaining({
+        body: JSON.stringify({ email: "real@example.com" }),
+      }),
+    );
+    global.fetch = originalFetch;
+    errorToast.mockRestore();
+    successToast.mockRestore();
+  });
+
+  it("shows who shared a copy and hides the source-message link it does not have", () => {
+    render(
+      <FindingDetail
+        finding={{
+          ...finding,
+          chat_id: "shared:abc",
+          message_id: "",
+          shared_from: { shared_at: 1, sender_name: "Ada Lovelace" },
+        }}
+        surface="findings_page"
+      />,
+    );
+    expect(screen.getByText("Shared by Ada Lovelace")).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: /Open source message/ }),
+    ).toBeNull();
+  });
+
   it("dismisses closure and explains when the finding was deleted concurrently", async () => {
     const mutation = useMutation({} as any) as jest.Mock;
     mutation.mockResolvedValue({ closed: false, not_found: true });

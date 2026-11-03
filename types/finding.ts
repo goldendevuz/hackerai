@@ -26,6 +26,7 @@ export interface FindingSummary {
   status: FindingStatus;
   chat_id: string;
   chat_title: string;
+  shared_from?: { shared_at: number; sender_name?: string };
   created_at: number;
 }
 
