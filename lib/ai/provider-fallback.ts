@@ -87,7 +87,7 @@ export const FALLBACK_PROVIDERS: readonly FallbackProviderSpec[] = [
     name: "google",
     keysEnv: "GEMINI_API_KEY",
     modelEnv: "GEMINI_FALLBACK_MODEL",
-    defaultModel: "gemini-2.5-flash",
+    defaultModel: "gemini-3-flash-preview",
     url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
     streamUsage: true,
   },
