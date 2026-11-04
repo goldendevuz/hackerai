@@ -7,7 +7,11 @@ import {
   it,
   jest,
 } from "@jest/globals";
-import { createGroqFallbackFetch, toGroqRequestBody } from "../groq-fallback";
+import {
+  createGroqFallbackFetch,
+  createGroqKeyState,
+  toGroqRequestBody,
+} from "../groq-fallback";
 
 const edge = require("next/dist/compiled/@edge-runtime/primitives/fetch") as {
   Headers: typeof Headers;
@@ -132,5 +136,85 @@ describe("Groq fallback", () => {
         "m",
       ),
     ).toBeNull();
+  });
+
+  describe("several keys", () => {
+    const keyUsed = (call: unknown[]) =>
+      new Headers((call[1] as RequestInit).headers).get("Authorization");
+    const refuse = () =>
+      jest.fn<any>().mockResolvedValue(new Response("limit", { status: 429 }));
+
+    it("moves to the next key when one is rate limited, then skips it", async () => {
+      const groq = jest
+        .fn<any>()
+        .mockResolvedValueOnce(
+          new Response("slow", {
+            status: 429,
+            headers: { "retry-after": "30" },
+          }),
+        )
+        .mockImplementation(async () => new Response("ok"));
+      global.fetch = groq as unknown as typeof fetch;
+      const state = createGroqKeyState();
+      const run = () =>
+        createGroqFallbackFetch(
+          refuse(),
+          "key-a, key-b",
+          "m",
+          state,
+        )(OPENROUTER_URL, { method: "POST", body: orBody() });
+
+      expect((await run()).status).toBe(200);
+      expect(groq.mock.calls.map(keyUsed)).toEqual([
+        "Bearer key-a",
+        "Bearer key-b",
+      ]);
+
+      // key-a is cooling down, so the next replays go straight to key-b.
+      await run();
+      await run();
+      expect(groq.mock.calls.slice(2).map(keyUsed)).toEqual([
+        "Bearer key-b",
+        "Bearer key-b",
+      ]);
+    });
+
+    it("spreads healthy replays across keys", async () => {
+      const groq = jest
+        .fn<any>()
+        .mockImplementation(async () => new Response("ok"));
+      global.fetch = groq as unknown as typeof fetch;
+      const state = createGroqKeyState();
+      const fetchWithGroq = createGroqFallbackFetch(
+        refuse(),
+        "key-a,key-b",
+        "m",
+        state,
+      );
+      for (let i = 0; i < 4; i++) {
+        await fetchWithGroq(OPENROUTER_URL, { method: "POST", body: orBody() });
+      }
+      expect(groq.mock.calls.map(keyUsed)).toEqual([
+        "Bearer key-a",
+        "Bearer key-b",
+        "Bearer key-a",
+        "Bearer key-b",
+      ]);
+    });
+
+    it("does not try another key for a request Groq rejects on its merits", async () => {
+      const groq = jest
+        .fn<any>()
+        .mockResolvedValue(new Response("bad", { status: 400 }));
+      global.fetch = groq as unknown as typeof fetch;
+      const response = await createGroqFallbackFetch(
+        refuse(),
+        "key-a,key-b",
+        "m",
+        createGroqKeyState(),
+      )(OPENROUTER_URL, { method: "POST", body: orBody() });
+      expect(groq).toHaveBeenCalledTimes(1);
+      expect(response.status).toBe(429); // OpenRouter's own error
+    });
   });
 });
