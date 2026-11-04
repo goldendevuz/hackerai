@@ -1621,12 +1621,91 @@ const projectProviderCache = new Map<
   ReturnType<typeof customProvider>
 >();
 
+// When a project key hits its OpenRouter spending limit, OpenRouter rejects
+// every paid request (402, or 403 "Key limit exceeded"). Rather than stop the
+// run, replay the request on the free ":free" pool, which costs $0, and keep
+// routing that key there for a few minutes so each step doesn't pay for a
+// rejected round trip first.
+const PROJECT_KEY_EXHAUSTED_TTL_MS = 5 * 60 * 1000;
+const exhaustedProjectKeys = new Map<string, number>();
+
+const isProjectKeyLimitResponse = async (
+  response: Response,
+): Promise<boolean> => {
+  if (response.status === 402) return true;
+  if (response.status !== 403) return false;
+  const text = await response
+    .clone()
+    .text()
+    .catch(() => "");
+  return /key limit/i.test(text);
+};
+
+const withFreePoolRequest = (
+  init: RequestInit | undefined,
+  freePool: string[],
+  apiKey: string,
+): RequestInit | null => {
+  if (typeof init?.body !== "string") return null;
+  try {
+    const body = JSON.parse(init.body) as Record<string, unknown>;
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${apiKey}`);
+    return {
+      ...init,
+      headers,
+      body: JSON.stringify({ ...body, model: freePool[0], models: freePool }),
+    };
+  } catch {
+    return null;
+  }
+};
+
+export const createProjectKeyFallbackFetch =
+  (
+    projectApiKey: string,
+    baseFetch: typeof fetch = openrouterPatchFetch,
+    freePool: string[] = buildOpenrouterPool("OPENROUTER_FREE_MODEL_OVERRIDE"),
+    // Free models cost $0, so the shared key is not billed; fall back to the
+    // project key only if no shared key is configured.
+    freeApiKey: string = process.env.OPENROUTER_API_KEY || projectApiKey,
+  ): typeof fetch =>
+  async (url, init) => {
+    const isChatCompletion = String(
+      typeof url === "object" && "url" in url ? url.url : url,
+    ).endsWith("/chat/completions");
+    if (!isChatCompletion || freePool.length === 0) {
+      return baseFetch(url, init);
+    }
+
+    const freeInit = () => withFreePoolRequest(init, freePool, freeApiKey);
+    const exhaustedAt = exhaustedProjectKeys.get(projectApiKey);
+    if (
+      exhaustedAt !== undefined &&
+      Date.now() - exhaustedAt < PROJECT_KEY_EXHAUSTED_TTL_MS
+    ) {
+      const replay = freeInit();
+      if (replay) return baseFetch(url, replay);
+    }
+
+    const response = await baseFetch(url, init);
+    if (!(await isProjectKeyLimitResponse(response))) return response;
+
+    const replay = freeInit();
+    if (!replay) return response;
+    exhaustedProjectKeys.set(projectApiKey, Date.now());
+    console.warn(
+      "Project OpenRouter key hit its spending limit; continuing on free models",
+    );
+    return baseFetch(url, replay);
+  };
+
 const buildProjectProvider = (apiKey: string) => {
   const cached = projectProviderCache.get(apiKey);
   if (cached) return cached;
   const projectOpenrouter = createOpenRouter({
     apiKey,
-    fetch: openrouterPatchFetch,
+    fetch: createProjectKeyFallbackFetch(apiKey),
     headers: openrouterAttributionHeaders,
   });
   const provider = customProvider({

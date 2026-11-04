@@ -3,6 +3,7 @@ import {
   DEEPSEEK_V4_FLASH_VISION_SLUG,
   GLM_5_3_FLASH_SLUG,
   createOpenRouterPatchFetch,
+  createProjectKeyFallbackFetch,
   enrichOpenRouterStreamError,
   getModelCutoffDate,
   getModelDisplayName,
@@ -335,6 +336,67 @@ describe("provider registry", () => {
       (projectA.languageModel("ask-model-free-glm") as { modelId: string })
         .modelId,
     ).toBe("z-ai/glm-5.3-flash");
+  });
+
+  describe("project key spending limit", () => {
+    const chatUrl = "https://openrouter.ai/api/v1/chat/completions";
+    const freePool = ["a/free:free", "b/free:free"];
+    const request = () => ({
+      method: "POST",
+      headers: { Authorization: "Bearer project-key" },
+      body: JSON.stringify({ model: "paid/model", messages: [] }),
+    });
+    const sent = (fetchMock: jest.Mock, call: number) => {
+      const init = fetchMock.mock.calls[call][1] as RequestInit;
+      return {
+        auth: new Headers(init.headers).get("Authorization"),
+        body: JSON.parse(init.body as string),
+      };
+    };
+
+    it("replays on the free pool when the key limit is hit, then keeps using it", async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValueOnce(new Response("{}", { status: 402 }))
+        .mockImplementation(async () => new Response("ok", { status: 200 }));
+      const wrapped = createProjectKeyFallbackFetch(
+        "key-402",
+        fetchMock as typeof fetch,
+        freePool,
+        "shared-key",
+      );
+
+      const first = await wrapped(chatUrl, request());
+      expect(first.status).toBe(200);
+      expect(sent(fetchMock, 0).body.model).toBe("paid/model");
+      expect(sent(fetchMock, 1)).toEqual({
+        auth: "Bearer shared-key",
+        body: expect.objectContaining({
+          model: "a/free:free",
+          models: freePool,
+        }),
+      });
+
+      await wrapped(chatUrl, request());
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(sent(fetchMock, 2).body.model).toBe("a/free:free");
+    });
+
+    it("treats 403 only as a limit when it says 'key limit'", async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(new Response("moderation flagged", { status: 403 }));
+      const wrapped = createProjectKeyFallbackFetch(
+        "key-403",
+        fetchMock as typeof fetch,
+        freePool,
+        "shared-key",
+      );
+
+      const response = await wrapped(chatUrl, request());
+      expect(response.status).toBe(403);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it.each([
