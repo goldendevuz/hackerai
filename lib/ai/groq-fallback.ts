@@ -8,6 +8,10 @@
  * request only needs OpenRouter-specific fields stripped and the model swapped.
  * Requests with images or files are not replayed (the default model is
  * text-only). Unset GROQ_API_KEY disables this entirely.
+ *
+ * GROQ_API_KEY may hold several comma-separated keys. Groq rate limits apply
+ * per account, so keys from separate accounts add capacity: replays start at a
+ * rotating key, and a key that answers 429 (or 401/403) is skipped for a while.
  */
 const GROQ_CHAT_COMPLETIONS_URL =
   "https://api.groq.com/openai/v1/chat/completions";
@@ -104,15 +108,57 @@ const isKeyLimit403 = async (response: Response) =>
       .catch(() => ""),
   );
 
+const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60_000;
+const MAX_RATE_LIMIT_COOLDOWN_MS = 5 * 60_000;
+const REJECTED_KEY_COOLDOWN_MS = 10 * 60_000;
+
+export type GroqKeyState = {
+  cursor: number;
+  cooldownUntil: Map<string, number>;
+};
+export const createGroqKeyState = (): GroqKeyState => ({
+  cursor: 0,
+  cooldownUntil: new Map(),
+});
+// Shared by every wrapper (the shared client and each project-key client), so
+// one rate-limited key is skipped everywhere.
+const sharedKeyState = createGroqKeyState();
+
+export const parseGroqKeys = (raw: string | undefined): string[] =>
+  (raw ?? "")
+    .split(",")
+    .map((key) => key.trim())
+    .filter(Boolean);
+
+const rateLimitCooldownMs = (response: Response): number => {
+  const seconds = Number(response.headers.get("retry-after"));
+  return Number.isFinite(seconds) && seconds > 0
+    ? Math.min(seconds * 1000, MAX_RATE_LIMIT_COOLDOWN_MS)
+    : DEFAULT_RATE_LIMIT_COOLDOWN_MS;
+};
+
+/** Keys in rotation order, skipping cooled-down ones unless all are cooling. */
+const orderedKeys = (keys: string[], state: GroqKeyState): string[] => {
+  const start = state.cursor++ % keys.length;
+  const rotated = [...keys.slice(start), ...keys.slice(0, start)];
+  const now = Date.now();
+  const available = rotated.filter(
+    (key) => (state.cooldownUntil.get(key) ?? 0) <= now,
+  );
+  return available.length > 0 ? available : rotated;
+};
+
 export const createGroqFallbackFetch =
   (
     baseFetch: typeof fetch,
-    apiKey: string | undefined = process.env.GROQ_API_KEY,
+    apiKeys: string | undefined = process.env.GROQ_API_KEY,
     model: string = process.env.GROQ_FALLBACK_MODEL || DEFAULT_GROQ_MODEL,
+    state: GroqKeyState = sharedKeyState,
   ): typeof fetch =>
   async (url, init) => {
     const response = await baseFetch(url, init);
-    if (!apiKey || response.ok) return response;
+    const keys = parseGroqKeys(apiKeys);
+    if (keys.length === 0 || response.ok) return response;
     const target = String(
       typeof url === "object" && "url" in url ? url.url : url,
     );
@@ -136,18 +182,30 @@ export const createGroqFallbackFetch =
     }
     if (!groqBody) return response;
 
-    const headers = new Headers(init.headers);
-    headers.set("Authorization", `Bearer ${apiKey}`);
-    headers.delete("HTTP-Referer");
-    headers.delete("X-Title");
     console.warn(
       `OpenRouter returned ${response.status}; replaying the request on Groq`,
     );
-    const replay = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
-      ...init,
-      headers,
-      body: groqBody,
-    });
+    for (const key of orderedKeys(keys, state)) {
+      const headers = new Headers(init.headers);
+      headers.set("Authorization", `Bearer ${key}`);
+      headers.delete("HTTP-Referer");
+      headers.delete("X-Title");
+      const replay = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
+        ...init,
+        headers,
+        body: groqBody,
+      });
+      if (replay.ok) return replay;
+      if (replay.status === 429) {
+        state.cooldownUntil.set(key, Date.now() + rateLimitCooldownMs(replay));
+        continue;
+      }
+      if (replay.status === 401 || replay.status === 403) {
+        state.cooldownUntil.set(key, Date.now() + REJECTED_KEY_COOLDOWN_MS);
+        continue;
+      }
+      break; // another key cannot fix a request Groq rejects on its merits
+    }
     // A Groq failure is less informative than OpenRouter's own error.
-    return replay.ok ? replay : response;
+    return response;
   };
