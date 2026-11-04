@@ -460,6 +460,7 @@ export async function runSummarizationStep(options: {
   onPhaseDuration?: import("@/lib/chat/summarization").ContextCompactionPhaseReporter;
   startupCompaction?: import("@/lib/chat/summarization/startup-compaction").StartupCompactionContext;
   registerBackgroundWork?: import("@/lib/chat/summarization").BackgroundWorkRegistrar;
+  provider?: import("@/lib/ai/providers").TrackedProvider;
 }): Promise<SummarizationStepResult> {
   const {
     summarizationAttempted,
@@ -492,6 +493,7 @@ export async function runSummarizationStep(options: {
     startupCompaction: options.startupCompaction,
     compactionPolicy: options.compactionPolicy,
     registerBackgroundWork: options.registerBackgroundWork,
+    provider: options.provider,
   });
 
   if (!needsSummarization) {

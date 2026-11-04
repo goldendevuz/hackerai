@@ -1,3 +1,4 @@
+import type { TrackedProvider } from "@/lib/ai/providers";
 import { createCloudNetworkPrompt } from "@/lib/cloud-network/prompt";
 import { BrowserSessions } from "./utils/browser-sessions";
 import { createBrowserHandoff } from "./browser-handoff";
@@ -74,6 +75,8 @@ import {
 export { isE2BSandbox };
 
 export type CreateToolsRuntimePolicy = {
+  /** Project-key provider for tool-side model calls (e.g. finding dedupe). */
+  modelProvider?: TrackedProvider;
   signal?: AbortSignal;
   allowedToolNames?: readonly string[];
   additionalTools?: (context: ToolContext) => ToolSet;
@@ -304,6 +307,7 @@ export const createTools = (
     isE2BSandbox,
     appendMetadataStream,
     onToolCost,
+    modelProvider: runtimePolicy.modelProvider,
     onToolFailure,
     requestToolApproval,
     autoReviewEvidenceEnabled,

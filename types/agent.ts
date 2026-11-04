@@ -717,6 +717,8 @@ export interface ToolContext {
   appendMetadataStream?: AppendMetadataStreamFn;
   /** Callback to report additional tool costs (in dollars) that should be added to the request's total cost. */
   onToolCost?: (costDollars: number) => void;
+  /** Provider for tool-side model calls; a project's own OpenRouter key when set. */
+  modelProvider?: import("@/lib/ai/providers").TrackedProvider;
   /** Callback to report handled provider/tool failures to the request's host runtime. */
   onToolFailure?: ToolFailureLogger;
   /** Optional approval gate for mutating or command-executing agent tools. */

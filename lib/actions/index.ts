@@ -6,7 +6,7 @@ import {
   UIMessage,
   UIMessageStreamWriter,
 } from "ai";
-import { myProvider } from "@/lib/ai/providers";
+import { myProvider, type TrackedProvider } from "@/lib/ai/providers";
 import { z } from "zod";
 import {
   buildProviderOptions,
@@ -68,6 +68,7 @@ ${truncateMiddle(message, 8000)}`;
 export const generateTitleFromUserMessage = async (
   truncatedMessages: UIMessage[],
   onCost?: (costDollars: number) => void,
+  provider: TrackedProvider = myProvider,
 ): Promise<string | undefined> => {
   const firstMessage = truncatedMessages[0];
   const firstMessageParts = firstMessage?.parts ?? [];
@@ -98,7 +99,7 @@ export const generateTitleFromUserMessage = async (
 
   try {
     const result = await generateText({
-      model: myProvider.languageModel("title-generator-model"),
+      model: provider.languageModel("title-generator-model"),
       providerOptions: buildProviderOptions(
         false,
         undefined,
@@ -155,11 +156,13 @@ export const generateTitleFromUserMessageWithWriter = async (
   writer: UIMessageStreamWriter,
   onTitleGenerated?: (title: string) => Promise<unknown>,
   onCost?: (costDollars: number) => void,
+  provider: TrackedProvider = myProvider,
 ): Promise<string | undefined> => {
   try {
     const chatTitle = await generateTitleFromUserMessage(
       truncatedMessages,
       onCost,
+      provider,
     );
 
     writer.write({

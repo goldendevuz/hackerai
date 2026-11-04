@@ -32,7 +32,11 @@ import {
   isCloudSandbox,
 } from "@/lib/ai/tools/utils/sandbox-types";
 import type { Id } from "@/convex/_generated/dataModel";
-import { KIMI_K3_SLUG, myProvider } from "@/lib/ai/providers";
+import {
+  KIMI_K3_SLUG,
+  myProvider,
+  type TrackedProvider,
+} from "@/lib/ai/providers";
 import {
   isRecoverableStartupCompactionError,
   isCompactionTimeout,
@@ -377,6 +381,7 @@ const logContextCompactionFailed = ({
 };
 
 export interface CheckAndSummarizeOptions {
+  provider?: TrackedProvider;
   compactionPolicy?: CompactionModelPolicy;
   uiMessages: UIMessage[];
   /** History before injected notes/reminders; falls back to uiMessages for direct callers. */
@@ -551,6 +556,7 @@ const generateSummaryTextWithRetry = async ({
   onRetry,
   compactionPolicy,
   persistence = "durable",
+  provider = myProvider,
 }: {
   messagesToSummarize: UIMessage[];
   modelMessages?: ModelMessage[];
@@ -569,6 +575,8 @@ const generateSummaryTextWithRetry = async ({
   onRetry?: () => void;
   compactionPolicy?: CompactionModelPolicy;
   persistence?: "durable" | "run_scoped";
+  /** Project-key provider when set; defaults to the shared deployment key. */
+  provider?: TrackedProvider;
 }): Promise<
   Awaited<ReturnType<typeof generateSummaryText>> & {
     languageModel: LanguageModel;
@@ -601,7 +609,7 @@ const generateSummaryTextWithRetry = async ({
       try {
         for (const [index, modelName] of models.entries()) {
           abortSignal?.throwIfAborted();
-          const languageModel = myProvider.languageModel(modelName);
+          const languageModel = provider.languageModel(modelName);
           const attemptStartedAt = Date.now();
           // Expanded Max recovery needs the same complete-checkpoint safeguards
           // even when the separate moderation compaction experiment is paused.
@@ -725,7 +733,7 @@ const generateSummaryTextWithRetry = async ({
       }
     }
     if (!startupCompaction || mode !== "agent") {
-      const languageModel = myProvider.languageModel(
+      const languageModel = provider.languageModel(
         CONTEXT_COMPACTION_MODEL_NAME,
       );
       try {
@@ -753,7 +761,7 @@ const generateSummaryTextWithRetry = async ({
         }
 
         const retryModelName = SUMMARIZATION_RETRY_MODEL_BY_MODE[mode];
-        const retryLanguageModel = myProvider.languageModel(retryModelName);
+        const retryLanguageModel = provider.languageModel(retryModelName);
         onRetry?.();
         logContextCompactionRetrying({
           chatId,
@@ -795,7 +803,7 @@ const generateSummaryTextWithRetry = async ({
       abortSignal?.throwIfAborted();
       const attempt: SummarizationAttempt =
         index === 0 ? "primary" : "fallback";
-      const languageModel = myProvider.languageModel(modelName);
+      const languageModel = provider.languageModel(modelName);
       startupCompaction.onAttempt?.({
         variant: STARTUP_COMPACTION_VARIANT,
         fallbackUsed: index > 0,
@@ -908,6 +916,7 @@ const startTranscriptSave = ({
 };
 
 export interface CompactModelMessagesInRunOptions {
+  provider?: TrackedProvider;
   compactionPolicy?: CompactionModelPolicy;
   modelMessages: ModelMessage[];
   /** UI history excludes synthetic SDK continuation/approval messages. */
@@ -983,6 +992,7 @@ export const compactModelMessagesInRun = async ({
   onPhaseDuration,
   registerBackgroundWork,
   compactionPolicy,
+  provider,
 }: CompactModelMessagesInRunOptions): Promise<InRunModelCompactionResult | null> => {
   const summarizationThreshold = getSummarizationThresholdTokens(maxTokens);
   const compactionReason = getCompactionLogReason({
@@ -1065,6 +1075,7 @@ export const compactModelMessagesInRun = async ({
     let warmPrefixSucceeded = false;
     const runBoundedSummary = () =>
       generateSummaryTextWithRetry({
+        provider,
         onRetry: progress.retry,
         messagesToSummarize: [],
         modelMessages,
@@ -1279,6 +1290,7 @@ export const checkAndSummarizeIfNeeded = async ({
   registerBackgroundWork,
   startupCompaction,
   compactionPolicy,
+  provider,
 }: CheckAndSummarizeOptions): Promise<SummarizationResult> => {
   // Detect and separate synthetic summary message from real messages
   let realMessages: UIMessage[];
@@ -1400,6 +1412,7 @@ export const checkAndSummarizeIfNeeded = async ({
     // Run summary generation and transcript saving in parallel — they are
     // independent (transcript is formatted from raw messages, not the summary).
     const summaryPromise = generateSummaryTextWithRetry({
+      provider,
       onRetry: progress.retry,
       messagesToSummarize,
       mode,

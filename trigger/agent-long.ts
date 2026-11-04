@@ -2348,6 +2348,11 @@ export const agentLongTask = task({
           try {
             const usageTracker = new UsageTracker();
             observedUsageTracker = usageTracker;
+            // Project's own OpenRouter key (or the shared one) for every model call in
+            // this run, including title, summarization and image description.
+            const trackedProvider = createTrackedProvider(
+              projectContext.openrouterApiKey,
+            );
             const auxiliaryVision = directGlmVisionEnabled
               ? {
                   isEnabled: visionSummaryRecovery.isEnabled,
@@ -2359,6 +2364,7 @@ export const agentLongTask = task({
                     source: "file_view";
                   }) => {
                     return await describeImageWithAuxiliaryVision({
+                      provider: trackedProvider,
                       ...args,
                       requestId: ctx.run.id,
                       userId,
@@ -2795,6 +2801,7 @@ export const agentLongTask = task({
             };
             const requestToolApproval = buildAgentToolApprovalRequester({
               agentPermissionMode,
+              provider: trackedProvider,
               approvalSessionId,
               writer,
               chatId,
@@ -2904,6 +2911,7 @@ export const agentLongTask = task({
                 triggerRegion,
                 environment: ctx.environment.type,
                 signal: userStopSignal.signal,
+                modelProvider: trackedProvider,
                 keepE2BLeaseAliveForRun: true,
                 onBrowserOwnershipLost: () =>
                   stopSignal.abort("browser_ownership_lost"),
@@ -3099,6 +3107,7 @@ export const agentLongTask = task({
                     usageTracker.nonModelCost += costDollars;
                     chatLogger?.getBuilder().addToolCost(costDollars);
                   },
+                  trackedProvider,
                 )
               : Promise.resolve(undefined);
 
@@ -3126,9 +3135,6 @@ export const agentLongTask = task({
               subscription,
               shouldIncludeNotes: userCustomization?.include_notes ?? true,
             };
-            const trackedProvider = createTrackedProvider(
-              projectContext.openrouterApiKey,
-            );
             const [currentSystemPrompt, messagesWithNotes] = await Promise.all([
               systemPrompt(
                 userId,
@@ -4374,6 +4380,7 @@ export const agentLongTask = task({
                   try {
                     state.finalMessages =
                       await describeImageAttachmentsWithAuxiliaryVision({
+                        provider: trackedProvider,
                         messages: omitImageViewToolResultsForProviderRetry(
                           state.finalMessages,
                         ).messages,
@@ -4638,6 +4645,7 @@ export const agentLongTask = task({
                         try {
                           recoveredVisionMessages =
                             await describeImageAttachmentsWithAuxiliaryVision({
+                              provider: trackedProvider,
                               messages:
                                 omitImageViewToolResultsForProviderRetry(
                                   state.finalMessages,

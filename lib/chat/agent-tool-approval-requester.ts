@@ -257,7 +257,10 @@ export const buildAgentToolApprovalRequester = ({
   onAutoReviewCircuitBreaker,
   onPostWaitAuthorizationDenied,
   onApprovalWait,
+  provider,
 }: {
+  /** Project-key provider for auto-review; defaults to the shared key. */
+  provider?: import("@/lib/ai/providers").TrackedProvider;
   agentPermissionMode: AgentPermissionMode;
   approvalSessionId?: string;
   writer: UIMessageStreamWriter;
@@ -458,6 +461,7 @@ export const buildAgentToolApprovalRequester = ({
             authorizationContext: autoReviewAuthorizationContext,
             conversationContext: autoReviewConversationContext,
             signal,
+            provider,
           });
         } finally {
           activeRuntimeBudget.resume();

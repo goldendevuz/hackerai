@@ -119,7 +119,11 @@ export const createCreateVulnerabilityReport = (
               report,
               ...(evidenceVerification ? { evidenceVerification } : {}),
             },
-            { abortSignal, onCost: context.onToolCost },
+            {
+              abortSignal,
+              onCost: context.onToolCost,
+              provider: context.modelProvider,
+            },
           );
 
           if (!result.success && result.error === "duplicate") {

@@ -994,6 +994,7 @@ export const subagentTask = task({
             };
             const requestToolApproval = buildAgentToolApprovalRequester({
               agentPermissionMode: permissionMode,
+              provider: createTrackedProvider(projectOpenrouterApiKey),
               approvalSessionId,
               writer,
               chatId: row.chat_id,
@@ -1146,6 +1147,7 @@ export const subagentTask = task({
                 chargeSandboxRuntime: false,
                 triggerRegion,
                 environment: ctx.environment.type,
+                modelProvider: createTrackedProvider(projectOpenrouterApiKey),
               },
             );
             cleanupBrowserSessions = cleanupToolBrowsers;

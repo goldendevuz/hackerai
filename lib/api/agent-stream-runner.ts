@@ -1505,6 +1505,7 @@ export async function createAgentStream(
     abortSignal.throwIfAborted();
     compactionAttemptCount++;
     const result = await compactModelMessagesInRun({
+      provider: ctx.trackedProvider,
       compactionPolicy,
       // Use the existing bounded summary projection even for expanded Max.
       // The transcript save still receives the complete original history.
@@ -2144,6 +2145,7 @@ export async function createAgentStream(
         ) {
           if (shouldCheckDurableSummary) {
             const result = await runSummarizationStep({
+              provider: ctx.trackedProvider,
               compactionPolicy,
               messages: state.finalMessages,
               sourceUiMessages: state.sourceUiMessages,
@@ -2317,6 +2319,7 @@ export async function createAgentStream(
             compactionAttemptCount++;
             lastCompactionRawMessageCount = rawModelMessages.length;
             const inRunResult = await compactModelMessagesInRun({
+              provider: ctx.trackedProvider,
               compactionPolicy,
               modelMessages: rollingModelMessages,
               sourceUiMessages: state.sourceUiMessages ?? state.finalMessages,
