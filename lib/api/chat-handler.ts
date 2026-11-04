@@ -934,6 +934,11 @@ export const createChatHandler = () => {
           try {
             const usageTracker = new UsageTracker();
             paidDailyFreeAllowanceUsageTracker = usageTracker;
+            // Project's own OpenRouter key (or the shared one) for every model call in
+            // this run, including title, summarization and image description.
+            const trackedProvider = createTrackedProvider(
+              projectContext.openrouterApiKey,
+            );
             const auxiliaryVision = directGlmVisionEnabled
               ? {
                   isEnabled: visionSummaryRecovery.isEnabled,
@@ -945,6 +950,7 @@ export const createChatHandler = () => {
                     source: "file_view";
                   }) => {
                     return await describeImageWithAuxiliaryVision({
+                      provider: trackedProvider,
                       ...args,
                       requestId,
                       userId,
@@ -1021,6 +1027,7 @@ export const createChatHandler = () => {
                 triggerRegion: executionRegion,
                 environment: process.env.VERCEL_ENV ?? "development",
                 signal: userStopSignal.signal,
+                modelProvider: trackedProvider,
               },
             );
 
@@ -1166,12 +1173,9 @@ export const createChatHandler = () => {
                     usageTracker.nonModelCost += costDollars;
                     chatLogger?.getBuilder().addToolCost(costDollars);
                   },
+                  trackedProvider,
                 )
               : Promise.resolve(undefined);
-
-            const trackedProvider = createTrackedProvider(
-              projectContext.openrouterApiKey,
-            );
 
             let currentSystemPrompt = await systemPrompt(
               userId,
@@ -1946,6 +1950,7 @@ export const createChatHandler = () => {
                   try {
                     state.finalMessages =
                       await describeImageAttachmentsWithAuxiliaryVision({
+                        provider: trackedProvider,
                         messages: omitImageViewToolResultsForProviderRetry(
                           state.finalMessages,
                         ).messages,
@@ -2214,6 +2219,7 @@ export const createChatHandler = () => {
                         try {
                           recoveredVisionMessages =
                             await describeImageAttachmentsWithAuxiliaryVision({
+                              provider: trackedProvider,
                               messages:
                                 omitImageViewToolResultsForProviderRetry(
                                   state.finalMessages,

@@ -7,6 +7,7 @@ import {
   DEEPSEEK_V4_FLASH_VISION_SLUG,
   GLM_5_3_FLASH_SLUG,
   myProvider,
+  type TrackedProvider,
 } from "@/lib/ai/providers";
 import { getProviderUsageRawModelCost } from "@/lib/provider-usage-cost";
 import {
@@ -165,49 +166,49 @@ Requirements:
 - State uncertainty or illegibility explicitly. Never invent hidden details.
 - Return only a compact factual description. Do not add a preamble, advice, or Markdown fencing.`;
 
-const defaultModelRunner: AuxiliaryVisionModelRunner = async ({
-  image,
-  mediaType,
-  filename,
-  abortSignal,
-  userId,
-}) => {
-  const result = await generateText({
-    model: myProvider.languageModel(AUXILIARY_VISION_MODEL),
-    system: AUXILIARY_VISION_SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: filename
-              ? `Describe the attached image named ${filename}.`
-              : "Describe the attached image.",
-          },
-          { type: "image", image, mediaType },
-        ],
+// A project with its own OpenRouter key passes its provider so the image
+// description is billed to that key instead of the shared deployment key.
+const createModelRunner =
+  (provider: TrackedProvider): AuxiliaryVisionModelRunner =>
+  async ({ image, mediaType, filename, abortSignal, userId }) => {
+    const result = await generateText({
+      model: provider.languageModel(AUXILIARY_VISION_MODEL),
+      system: AUXILIARY_VISION_SYSTEM_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: filename
+                ? `Describe the attached image named ${filename}.`
+                : "Describe the attached image.",
+            },
+            { type: "image", image, mediaType },
+          ],
+        },
+      ],
+      providerOptions: {
+        openrouter: {
+          ...AUXILIARY_VISION_PROVIDER_OPTIONS.openrouter,
+          ...(userId && { user: userId }),
+        },
       },
-    ],
-    providerOptions: {
-      openrouter: {
-        ...AUXILIARY_VISION_PROVIDER_OPTIONS.openrouter,
-        ...(userId && { user: userId }),
-      },
-    },
-    temperature: 0,
-    maxOutputTokens: AUXILIARY_VISION_MAX_OUTPUT_TOKENS,
-    // The descriptor owns the two-attempt budget, including local timeouts.
-    maxRetries: 0,
-    abortSignal,
-  });
+      temperature: 0,
+      maxOutputTokens: AUXILIARY_VISION_MAX_OUTPUT_TOKENS,
+      // The descriptor owns the two-attempt budget, including local timeouts.
+      maxRetries: 0,
+      abortSignal,
+    });
 
-  return {
-    text: result.text,
-    usage: result.usage,
-    model: result.response.modelId,
+    return {
+      text: result.text,
+      usage: result.usage,
+      model: result.response.modelId,
+    };
   };
-};
+
+const defaultModelRunner = createModelRunner(myProvider);
 
 const withDataUrlPrefix = (image: string, mediaType: string): string =>
   image.startsWith("data:") ||
@@ -228,7 +229,8 @@ export async function describeImageWithAuxiliaryVision({
   triggerRunId,
   abortSignal,
   onCost,
-  modelRunner = defaultModelRunner,
+  provider,
+  modelRunner = provider ? createModelRunner(provider) : defaultModelRunner,
   canRetry = () => true,
 }: {
   image: string;
@@ -241,6 +243,7 @@ export async function describeImageWithAuxiliaryVision({
   triggerRunId?: string;
   abortSignal?: AbortSignal;
   onCost?: (costDollars: number) => void;
+  provider?: TrackedProvider;
   modelRunner?: AuxiliaryVisionModelRunner;
   canRetry?: () => boolean;
 }): Promise<AuxiliaryVisionResult> {
@@ -402,6 +405,7 @@ export async function describeImageAttachmentsWithAuxiliaryVision({
   triggerRunId,
   abortSignal,
   onCost,
+  provider,
   modelRunner,
   cacheDescription,
 }: {
@@ -412,6 +416,7 @@ export async function describeImageAttachmentsWithAuxiliaryVision({
   triggerRunId?: string;
   abortSignal?: AbortSignal;
   onCost?: (costDollars: number) => void;
+  provider?: TrackedProvider;
   modelRunner?: AuxiliaryVisionModelRunner;
   cacheDescription?: (args: {
     userId: string;
@@ -526,6 +531,7 @@ export async function describeImageAttachmentsWithAuxiliaryVision({
               onCost: (costDollars) => {
                 pendingCostDollars += costDollars;
               },
+              provider,
               modelRunner,
               canRetry: () =>
                 pendingCostDollars <

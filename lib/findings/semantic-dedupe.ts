@@ -1,6 +1,10 @@
 import { generateText, Output, NoObjectGeneratedError } from "ai";
 import { z } from "zod";
-import { myProvider, resolveAgentTierToProviderKey } from "@/lib/ai/providers";
+import {
+  myProvider,
+  resolveAgentTierToProviderKey,
+  type TrackedProvider,
+} from "@/lib/ai/providers";
 import { buildProviderOptions } from "@/lib/api/chat-stream-helpers";
 import { getProviderUsageRawModelCost } from "@/lib/provider-usage-cost";
 import { createFinding, getFindingDedupeContext } from "@/lib/db/actions";
@@ -26,12 +30,13 @@ type CreateArgs = Parameters<typeof createFinding>[0];
 type ComparisonOptions = {
   abortSignal?: AbortSignal;
   onCost?: (cost: number) => void;
+  provider?: TrackedProvider;
 };
 
 export async function compareFindingDuplicate(
   report: CreateArgs["report"],
   context: FindingDedupeContext,
-  { abortSignal, onCost }: ComparisonOptions,
+  { abortSignal, onCost, provider = myProvider }: ComparisonOptions,
 ): Promise<string | undefined> {
   abortSignal?.throwIfAborted();
   // Exact matches are rechecked atomically by the mutation, including matches
@@ -48,7 +53,7 @@ export async function compareFindingDuplicate(
   };
   try {
     const result = await generateText({
-      model: myProvider.languageModel(MODEL),
+      model: provider.languageModel(MODEL),
       system: SYSTEM,
       prompt: JSON.stringify({
         proposed: findingComparisonSummary(report),

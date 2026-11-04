@@ -2,7 +2,7 @@ import { generateText, Output, type UIMessage } from "ai";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import { myProvider } from "@/lib/ai/providers";
+import { myProvider, type TrackedProvider } from "@/lib/ai/providers";
 import { getFallbackSlugs } from "@/lib/api/chat-stream-helpers";
 import { getProviderUsageRawModelCost } from "@/lib/provider-usage-cost";
 import {
@@ -116,30 +116,31 @@ Trust rules:
 - Keep the rationale concise and categorical. Never quote commands, paths, credentials, secrets, file contents, or other action evidence in it.
 - Never describe Approve for me as deterministic security enforcement.`;
 
-const defaultModelRunner: AutoReviewModelRunner = async ({
-  system,
-  prompt,
-  abortSignal,
-}) => {
-  const result = await generateText({
-    model: myProvider.languageModel(AGENT_AUTO_REVIEW_MODEL),
-    system,
-    messages: [{ role: "user", content: prompt }],
-    output: Output.object({ schema: agentAutoReviewOutputSchema }),
-    providerOptions: AGENT_AUTO_REVIEW_PROVIDER_OPTIONS,
-    temperature: 0,
-    maxOutputTokens: 1_000,
-    maxRetries: 0,
-    abortSignal,
-  });
-  const rawCost = getProviderUsageRawModelCost(result.usage.raw);
-  return {
-    output: result.output,
-    ...(typeof rawCost === "number" && Number.isFinite(rawCost) && rawCost > 0
-      ? { costDollars: rawCost }
-      : {}),
+// A project with its own OpenRouter key reviews on that key, not the shared one.
+const createModelRunner =
+  (provider: TrackedProvider): AutoReviewModelRunner =>
+  async ({ system, prompt, abortSignal }) => {
+    const result = await generateText({
+      model: provider.languageModel(AGENT_AUTO_REVIEW_MODEL),
+      system,
+      messages: [{ role: "user", content: prompt }],
+      output: Output.object({ schema: agentAutoReviewOutputSchema }),
+      providerOptions: AGENT_AUTO_REVIEW_PROVIDER_OPTIONS,
+      temperature: 0,
+      maxOutputTokens: 1_000,
+      maxRetries: 0,
+      abortSignal,
+    });
+    const rawCost = getProviderUsageRawModelCost(result.usage.raw);
+    return {
+      output: result.output,
+      ...(typeof rawCost === "number" && Number.isFinite(rawCost) && rawCost > 0
+        ? { costDollars: rawCost }
+        : {}),
+    };
   };
-};
+
+const defaultModelRunner = createModelRunner(myProvider);
 
 const textFromUserMessage = (message: UIMessage): string =>
   (message.parts ?? [])
@@ -543,13 +544,15 @@ export async function reviewAgentToolAction({
   conversationContext,
   signal,
   timeoutMs = AGENT_AUTO_REVIEW_TIMEOUT_MS,
-  runModel = defaultModelRunner,
+  provider,
+  runModel = provider ? createModelRunner(provider) : defaultModelRunner,
 }: {
   request: AgentToolApprovalRequest;
   authorizationContext: AgentAutoReviewAuthorizationContext;
   conversationContext?: AgentAutoReviewConversationContext;
   signal?: AbortSignal;
   timeoutMs?: number;
+  provider?: TrackedProvider;
   runModel?: AutoReviewModelRunner;
 }): Promise<AgentAutoReviewDecision> {
   const startedAt = Date.now();

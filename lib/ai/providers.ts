@@ -1719,3 +1719,5 @@ export const createTrackedProvider = (projectOpenrouterApiKey?: string) =>
   projectOpenrouterApiKey
     ? buildProjectProvider(projectOpenrouterApiKey)
     : myProvider;
+
+export type TrackedProvider = ReturnType<typeof createTrackedProvider>;
