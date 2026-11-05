@@ -40,9 +40,16 @@ services:
 
   # Cloudflare Tunnel: <domen> -> web:3000. Token: Zero Trust -> Networks -> Tunnels.
   # Public hostname dashboard'da http://web:3000 ga yo'naltiriladi.
+  #
+  # --protocol http2: this host's home internet connection drops cloudflared's
+  # default QUIC (UDP) connections every 10-40 minutes ("timeout: no recent
+  # network activity", self-healing in a few seconds but a real user-visible
+  # 502/1033 each time it happens). QUIC is more sensitive to the packet
+  # loss/NAT behavior typical of a residential connection than HTTP/2 over
+  # TCP; forcing http2 trades a small latency cost for far fewer drops.
   cloudflared:
     image: cloudflare/cloudflared:2026.10.3
-    command: tunnel --no-autoupdate run
+    command: tunnel --no-autoupdate --protocol http2 run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
