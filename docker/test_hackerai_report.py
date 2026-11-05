@@ -1,10 +1,13 @@
 """Build the shipped example spec and check the PDF is produced and paginated."""
 
+import contextlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import tempfile
 import unittest
+import unittest.mock
 
 HERE = Path(__file__).parent
 HAS_REPORTLAB = importlib.util.find_spec("reportlab") is not None
@@ -36,6 +39,32 @@ class BuildReportTest(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as tmp:
             module.build_report(spec, str(Path(tmp) / "r.pdf"))
+
+    def test_summary_panel_widens_the_label_column_for_long_labels(self):
+        # Regression: a fixed 20mm label column broke "Tuzatish" mid-word
+        # ("Tuzatis" / "h" on the next line) instead of fitting it on one
+        # line. The column must now grow with the widest label.
+        module = self.load()
+        from reportlab.lib.units import mm
+
+        narrow = module.summary_panel([["Nima", "x"], ["Ta'sir", "x"]], module.ORANGE)
+        wide = module.summary_panel(
+            [["Nima", "x"], ["Ta'sir", "x"], ["Tuzatish", "x"]], module.ORANGE
+        )
+        self.assertGreater(wide._colWidths[0], narrow._colWidths[0])
+        self.assertLessEqual(wide._colWidths[0], 45 * mm)
+
+    def test_register_fonts_warns_instead_of_silently_falling_back(self):
+        # When fonts-dejavu-core isn't present, Helvetica can't render
+        # Uzbek oʻ/gʻ or Cyrillic -- this used to fail silently, producing
+        # a report with garbled glyphs and no diagnostic anywhere.
+        module = self.load()
+        with unittest.mock.patch.object(module, "FONT_DIRS", ["/nonexistent"]):
+            captured = io.StringIO()
+            with contextlib.redirect_stderr(captured):
+                result = module.register_fonts()
+        self.assertEqual(result, ("Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Courier"))
+        self.assertIn("fonts-dejavu-core not found", captured.getvalue())
 
     def test_unknown_block_type_is_rejected(self):
         module = self.load()
