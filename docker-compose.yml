@@ -8,11 +8,10 @@ name: hackerai
 # tushiradi, hech qanday ma'lumotlar bazasi yoki worker shart emas.
 services:
   web:
-    # CI (.github/workflows/deploy.yml) builds this on GitHub's runners (the
-    # server's 2 CPUs are too tight for a Next.js build) and pushes it here.
-    # `docker compose pull && up -d` on the server just swaps the container;
-    # `docker compose build` still works locally if you want to build it
-    # yourself instead.
+    # CI (.github/workflows/deploy.yml) builds this on GitHub's runners and
+    # pushes it to GHCR. `docker compose pull && up -d` on the server just
+    # swaps the container; `docker compose build` still works locally if
+    # you want to build it yourself instead.
     image: ghcr.io/goldendevuz/hackerai:latest
     build:
       context: .
@@ -24,9 +23,19 @@ services:
     # Faqat localhost'da -- tashqariga Cloudflare tunnel orqali chiqadi
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:3000"
-    # 2 CPU / 4GB umumiy serverda boshqa loyihalarga joy qoldirish uchun.
-    mem_limit: 1536m
-    mem_reservation: 512m
+    # Production host is itself a Tailscale node: its default DNS resolver
+    # (MagicDNS) resolves redis-http's own Funnel hostname
+    # (UPSTASH_REDIS_REST_URL, see below) to the *internal* tailnet IP,
+    # which this container's bridge network can't route to -- "fetch
+    # failed" on every rate-limit check even though the Funnel URL is
+    # genuinely public. Pinning public resolvers here bypasses MagicDNS and
+    # resolves the real public Funnel IP instead. Don't remove this even if
+    # it looks redundant -- see [[project-production-host-ikazimov7]].
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    mem_limit: 4096m
+    mem_reservation: 1024m
     restart: unless-stopped
     profiles: ["full"]
 
@@ -36,8 +45,11 @@ services:
   # the shared OpenRouter budget. Upstash's own serverless-redis-http (SRH)
   # puts that REST API in front of a plain self-hosted Redis -- free, no
   # external account needed. SRH must be reachable from Trigger.dev's own
-  # cloud workers (not just this server), so it's published on a host port
-  # with SRH_TOKEN as the only auth; redis itself stays internal-only.
+  # cloud workers (not just this server). The production host has no public
+  # inbound IP (home network, Tailscale-only), so redis-http is bound to
+  # loopback only and made public instead via `tailscale funnel --bg 8079`
+  # run once on the host -- that's what actually exposes it, not a host
+  # port here. UPSTASH_REDIS_REST_URL points at that Funnel hostname.
   redis:
     image: redis:8.8-alpine
     command: redis-server --save 60 1 --appendonly yes
@@ -53,7 +65,7 @@ services:
       SRH_TOKEN: ${SRH_TOKEN:-}
       SRH_CONNECTION_STRING: redis://redis:6379
     ports:
-      - "${REDIS_HTTP_PORT:-8079}:80"
+      - "127.0.0.1:${REDIS_HTTP_PORT:-8079}:80"
     depends_on:
       - redis
     restart: unless-stopped
