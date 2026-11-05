@@ -2055,6 +2055,17 @@ export const agentLongTask = task({
         : undefined;
       // Check capacity before moderation/model work, then consume the daily
       // request atomically under the free-run lock when execution starts.
+      //
+      // Solider.uz change: the standalone FREE_DAILY_COST_LIMIT_USD cap
+      // (free-daily-cost.ts) downgrades to the free model pool instead of
+      // blocking the run -- only the real monthly cap (tied to this
+      // deployment's actual OpenRouter balance) still hard-stops. This is
+      // the earliest checkFreeCostBudget call in this task, so it must
+      // catch the same way the later one (after an approval pause) does --
+      // otherwise every brand-new free-tier request hits this one first and
+      // gets hard-blocked before the later catch is ever reached. Applied
+      // below once `selectedModel` exists.
+      let forceFreeTierModelOnDailyCap = false;
       if (subscription === "free") {
         await checkRateLimitCapacity(
           userId,
@@ -2066,7 +2077,15 @@ export const agentLongTask = task({
           freeQuotaSubject,
           freeLimits,
         );
-        await checkFreeCostBudget(freeUsageSubject, freeLimits);
+        await checkFreeCostBudget(freeUsageSubject, freeLimits).catch(
+          (error: unknown) => {
+            if (isDailyCostCapExhaustedError(error)) {
+              forceFreeTierModelOnDailyCap = true;
+              return;
+            }
+            throw error;
+          },
+        );
       }
 
       const baseTodos: Todo[] = getBaseTodosForRequest(
@@ -2097,6 +2116,13 @@ export const agentLongTask = task({
         triggerRunId: ctx.run.id,
         requestId: ctx.run.id,
       });
+
+      if (forceFreeTierModelOnDailyCap) {
+        // `selectedModel` is the already-resolved registry key; force it
+        // back onto the free-tier auto route now that the daily paid-spend
+        // cap is hit, instead of blocking the request.
+        selectedModel = selectModel(mode, subscription, "auto");
+      }
 
       if (!processedMessages.length) {
         throw new ChatSDKError(
