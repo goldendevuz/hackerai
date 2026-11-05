@@ -84,6 +84,13 @@ def register_fonts():
 
     Only the three files shipped in fonts-dejavu-core are required; there is no
     italic face, so captions use the regular face in a muted color.
+
+    Helvetica (the PDF base-14 fallback) cannot render oʻ/gʻ or Cyrillic -- it
+    silently substitutes or drops those glyphs, which is exactly the "garbled
+    text" failure mode this has to stay loud about. If fonts-dejavu-core isn't
+    actually installed in this sandbox (template drift from docker/Dockerfile,
+    not a code bug), fail here instead of quietly producing an unreadable
+    report in whatever language needed those glyphs.
     """
     for directory in FONT_DIRS:
         paths = {
@@ -96,6 +103,14 @@ def register_fonts():
                 pdfmetrics.registerFont(TTFont(name, os.path.join(directory, file)))
             registerFontFamily("Sans", normal="Sans", bold="Sans-Bold", italic="Sans", boldItalic="Sans-Bold")
             return "Sans", "Sans-Bold", "Sans", "Mono"
+    print(
+        "WARNING: fonts-dejavu-core not found in "
+        + " or ".join(FONT_DIRS)
+        + " -- falling back to Helvetica, which cannot render Uzbek oʻ/gʻ or "
+        "Cyrillic. The sandbox image is missing a package docker/Dockerfile "
+        "expects; this is template drift, not something retrying fixes.",
+        file=sys.stderr,
+    )
     return "Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Courier"
 
 
@@ -236,7 +251,15 @@ def section_flowables(section):
 
 def summary_panel(rows, accent):
     data = [[Paragraph(inline(k), ST["label"]), Paragraph(inline(v), ST["cell"])] for k, v in rows]
-    table = Table(data, colWidths=[20 * mm, CONTENT_W - 20 * mm])
+    # Size the label column to the widest label instead of a fixed 20mm --
+    # a label like "Tuzatish" doesn't fit 20mm and was breaking mid-word
+    # ("Tuzatis" / "h") instead of wrapping on a word boundary.
+    label_w = max(
+        (pdfmetrics.stringWidth(str(k), BOLD, 9.5) for k, _ in rows),
+        default=20 * mm,
+    ) + 8 * mm
+    label_w = min(max(label_w, 20 * mm), 45 * mm)
+    table = Table(data, colWidths=[label_w, CONTENT_W - label_w])
     table.setStyle(
         TableStyle(
             [
