@@ -23,17 +23,6 @@ services:
     # Faqat localhost'da -- tashqariga Cloudflare tunnel orqali chiqadi
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:3000"
-    # Production host is itself a Tailscale node: its default DNS resolver
-    # (MagicDNS) resolves redis-http's own Funnel hostname
-    # (UPSTASH_REDIS_REST_URL, see below) to the *internal* tailnet IP,
-    # which this container's bridge network can't route to -- "fetch
-    # failed" on every rate-limit check even though the Funnel URL is
-    # genuinely public. Pinning public resolvers here bypasses MagicDNS and
-    # resolves the real public Funnel IP instead. Don't remove this even if
-    # it looks redundant -- see [[project-production-host-ikazimov7]].
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
     mem_limit: 4096m
     mem_reservation: 1024m
     restart: unless-stopped
@@ -45,11 +34,17 @@ services:
   # the shared OpenRouter budget. Upstash's own serverless-redis-http (SRH)
   # puts that REST API in front of a plain self-hosted Redis -- free, no
   # external account needed. SRH must be reachable from Trigger.dev's own
-  # cloud workers (not just this server). The production host has no public
-  # inbound IP (home network, Tailscale-only), so redis-http is bound to
-  # loopback only and made public instead via `tailscale funnel --bg 8079`
-  # run once on the host -- that's what actually exposes it, not a host
-  # port here. UPSTASH_REDIS_REST_URL points at that Funnel hostname.
+  # cloud workers (not just this server), not only from this container
+  # network. The production host has no public inbound IP (home network),
+  # so redis-http is exposed publicly through the same Cloudflare Tunnel
+  # the `web` service already uses (a second public hostname,
+  # redis.<domain>, routed to http://redis-http:80 in the Zero Trust
+  # dashboard) rather than a host port here. UPSTASH_REDIS_REST_URL points
+  # at that hostname. (A prior attempt used Tailscale Funnel instead --
+  # much higher latency through its relay, and it made the `web` container
+  # itself need a DNS override to avoid resolving its own Funnel hostname
+  # to an unroutable internal address. The Cloudflare Tunnel path has
+  # neither problem.)
   redis:
     image: redis:8.8-alpine
     command: redis-server --save 60 1 --appendonly yes
