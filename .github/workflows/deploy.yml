@@ -83,16 +83,14 @@ jobs:
           persist-credentials: false
 
       # DEPLOY_HOST is a Tailscale IP, not a public one -- the runner must
-      # join the tailnet before it can reach it. TAILSCALE_OAUTH_CLIENT_ID/
-      # SECRET come from an ephemeral, tag-scoped OAuth client (Tailscale
-      # admin console -> Settings -> OAuth clients), not a long-lived
-      # reusable auth key.
+      # join the tailnet before it can reach it. TAILSCALE_AUTHKEY is a
+      # reusable, ephemeral auth key (Tailscale admin console -> Settings ->
+      # Keys), so each run joins as a throwaway node that drops off the
+      # tailnet once the runner shuts down.
       - name: Join tailnet
         uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4.1.2
         with:
-          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
-          tags: tag:ci
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
 
       - name: Copy compose file to server
         uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
