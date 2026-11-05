@@ -1,11 +1,16 @@
 name: Deploy to production
 
 # Solider.uz change: builds the web app image on GitHub's runners (the
-# Hetzner server only has 2 CPUs / 4GB RAM shared with other projects --
-# too tight to build Next.js itself) and pushes it to GHCR. The server then
-# just pulls the new image and restarts the container; it never compiles
-# anything. Convex, Trigger.dev tasks and the Agent's E2B sandboxes are
-# separate cloud services this workflow never touches.
+# production host's 2 CPUs would be too tight to build Next.js itself) and
+# pushes it to GHCR. The server then just pulls the new image and restarts
+# the container; it never compiles anything. Convex, Trigger.dev tasks and
+# the Agent's E2B sandboxes are separate cloud services this workflow never
+# touches.
+#
+# 2026-11-05: production moved off the Hetzner VPS to a teammate's always-on
+# machine, reachable only over Tailscale (not a public IP) -- DEPLOY_HOST is
+# that machine's Tailscale IP, DEPLOY_PORT its non-standard SSH port, and the
+# deploy user is a non-root account (in the `docker` group) rather than root.
 
 on:
   push:
@@ -77,24 +82,36 @@ jobs:
         with:
           persist-credentials: false
 
+      # DEPLOY_HOST is a Tailscale IP, not a public one -- the runner must
+      # join the tailnet before it can reach it. TAILSCALE_AUTHKEY is a
+      # reusable, ephemeral auth key (Tailscale admin console -> Settings ->
+      # Keys), so each run joins as a throwaway node that drops off the
+      # tailnet once the runner shuts down.
+      - name: Join tailnet
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4.1.2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
       - name: Copy compose file to server
         uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
-          username: root
+          port: 8022
+          username: ikazimov7
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           source: "docker-compose.yml"
-          target: "/root/projects/hackerai"
+          target: "/home/ikazimov7/projects/hackerai"
 
       - name: Pull and restart on server
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.DEPLOY_HOST }}
-          username: root
+          port: 8022
+          username: ikazimov7
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             set -euo pipefail
-            cd /root/projects/hackerai
+            cd /home/ikazimov7/projects/hackerai
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
             docker compose --profile full --profile tunnel pull web
             docker compose --profile full --profile tunnel up -d --remove-orphans
