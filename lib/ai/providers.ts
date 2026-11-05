@@ -1,4 +1,4 @@
-import { createGroqFallbackFetch } from "./groq-fallback";
+import { createProviderFallbackFetch } from "./provider-fallback";
 import {
   DEEPSEEK_1017_MODEL_KEY,
   DEEPSEEK_1017_SLUG,
@@ -1277,7 +1277,7 @@ export const createOpenRouterPatchFetch =
 const openrouterPatchFetch = createOpenRouterPatchFetch();
 
 const openrouter = createOpenRouter({
-  fetch: createGroqFallbackFetch(openrouterPatchFetch),
+  fetch: createProviderFallbackFetch(openrouterPatchFetch),
   headers: openrouterAttributionHeaders,
 });
 
@@ -1706,9 +1706,9 @@ const buildProjectProvider = (apiKey: string) => {
   if (cached) return cached;
   const projectOpenrouter = createOpenRouter({
     apiKey,
-    // Outermost: Groq only runs after the project key and the free pool have
-    // both been refused.
-    fetch: createGroqFallbackFetch(createProjectKeyFallbackFetch(apiKey)),
+    // Outermost: the provider chain only runs after the project key and the
+    // free pool have both been refused.
+    fetch: createProviderFallbackFetch(createProjectKeyFallbackFetch(apiKey)),
     headers: openrouterAttributionHeaders,
   });
   const provider = customProvider({
